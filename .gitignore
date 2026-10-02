@@ -1,0 +1,13 @@
+# PlatformIO
+.pio/
+
+# VS Code
+.vscode/
+
+# Node.js
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example

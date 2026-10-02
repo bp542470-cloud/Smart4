@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+
+<html lang="vi">
+
+<head>
+
+```
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0">
+
+<title>Smart Home Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+<style>
+
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #111827;
+        color: white;
+    }
+
+    /* =========================
+       HEADER
+    ========================= */
+
+    header {
+        padding: 25px;
+        text-align: center;
+        background: #1f2937;
+    }
+
+    header h1 {
+        margin: 0;
+        font-size: 32px;
+    }
+
+    header p {
+        margin: 8px 0 0;
+        color: #9ca3af;
+    }
+
+    #connectionStatus {
+        margin-top: 12px;
+        color: #22c55e;
+        font-weight: bold;
+    }
+
+    /* =========================
+       CONTAINER
+    ========================= */
+
+    .container {
+        padding: 25px;
+        max-width: 1400px;
+        margin: auto;
+    }
+
+    /* =========================
+       AUTO BUTTON
+    ========================= */
+
+    .mode-card {
+        background: #1f2937;
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid #374151;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+    }
+
+    .mode-title {
+        font-size: 22px;
+        font-weight: bold;
+    }
+
+    .mode-description {
+        margin-top: 8px;
+        color: #9ca3af;
+    }
+
+    #autoModeBtn {
+        border: none;
+        padding: 14px 28px;
+        border-radius: 10px;
+        color: white;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        background: #6b7280;
+    }
+
+    #autoModeBtn.auto-on {
+        background: #16a34a;
+    }
+
+    #autoModeBtn.auto-off {
+        background: #6b7280;
+    }
+
+    /* =========================
+       SENSOR CARDS
+    ========================= */
+
+    .cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+
+    .card {
+        background: #1f2937;
+        border-radius: 15px;
+        padding: 20px;
+        text-align: center;
+    }
+
+    .sensor-card {
+        padding: 25px;
+        border: 1px solid #374151;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+    }
+
+    .sensor-card h2 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        font-size: 22px;
+    }
+
+    .sensor-status {
+        margin-top: 10px;
+        font-size: 18px;
+        font-weight: bold;
+        color: #22c55e;
+    }
+
+    /* =========================
+       GAUGE
+    ========================= */
+
+    .chart {
+        width: 100%;
+        height: 350px;
+    }
+
+    .value {
+        font-size: 30px;
+        font-weight: bold;
+        margin-top: 10px;
+    }
+
+    /* =========================
+       HISTORY
+    ========================= */
+
+    .history-charts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-top: 20px;
+    }
+
+    .history {
+        margin-top: 0;
+    }
+
+    .chart-card {
+        padding: 25px;
+        border: 1px solid #374151;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .chart-title {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+
+    .chart-title > span {
+        font-size: 35px;
+    }
+
+    .chart-title h2 {
+        margin: 5px 0 0;
+        font-size: 20px;
+    }
+
+    .chart-title p {
+        margin: 5px 0 0;
+        color: #9ca3af;
+        font-size: 14px;
+    }
+
+    #lightHistoryChart,
+    #gasHistoryChart {
+        width: 100%;
+        height: 380px;
+        margin-top: 10px;
+    }
+
+    /* =========================
+       MOBILE
+    ========================= */
+
+    @media (max-width: 900px) {
+
+        .cards {
+            grid-template-columns: 1fr;
+        }
+
+        .history-charts {
+            grid-template-columns: 1fr;
+        }
+
+        .mode-card {
+            flex-direction: column;
+            text-align: center;
+        }
+
+    }
+
+</style>
+```
+
+</head>
+
+<body>
+
+```
+<!-- =========================
+     HEADER
+========================= -->
+
+<header>
+
+    <h1>
+        🏠 SMART HOME
+    </h1>
+
+    <p>
+        IoT Monitoring System
+    </p>
+
+    <div id="connectionStatus">
+        ● HỆ THỐNG ĐANG HOẠT ĐỘNG
+    </div>
+
+</header>
+
+
+<!-- =========================
+     NỘI DUNG
+========================= -->
+
+<div class="container">
+
+
+    <!-- =========================
+         CHẾ ĐỘ AUTO / MANUAL
+    ========================= -->
+
+    <div class="mode-card">
+
+        <div>
+
+            <div class="mode-title">
+                ⚙️ CHẾ ĐỘ ĐIỀU KHIỂN
+            </div>
+
+            <div
+                id="modeStatus"
+                class="mode-description">
+
+                MANUAL - Điều khiển từ Wokwi
+
+            </div>
+
+        </div>
+
+
+        <button
+            id="autoModeBtn"
+            class="auto-off"
+            onclick="toggleAutoMode()">
+
+            AUTO: OFF
+
+        </button>
+
+    </div>
+
+
+    <!-- =========================
+         2 SENSOR
+    ========================= -->
+
+    <div class="cards">
+
+
+        <!-- ÁNH SÁNG -->
+
+        <div class="card sensor-card">
+
+            <h2>
+                ☀️ ÁNH SÁNG
+            </h2>
+
+            <div
+                id="lightChart"
+                class="chart">
+            </div>
+
+            <div
+                id="lightValue"
+                class="value">
+
+                0 lux
+
+            </div>
+
+            <div
+                id="lightStatus"
+                class="sensor-status">
+
+                Bình thường
+
+            </div>
+
+        </div>
+
+
+        <!-- GAS -->
+
+        <div class="card sensor-card">
+
+            <h2>
+                🛡️ CHẤT LƯỢNG KHÔNG KHÍ
+            </h2>
+
+            <div
+                id="gasChart"
+                class="chart">
+            </div>
+
+            <div
+                id="gasValue"
+                class="value">
+
+                0 %
+
+            </div>
+
+            <div
+                id="gasStatus"
+                class="sensor-status">
+
+                An toàn
+
+            </div>
+
+        </div>
+
+
+    </div>
+
+
+    <!-- =========================
+         LỊCH SỬ
+    ========================= -->
+
+    <div class="history-charts">
+
+
+        <!-- ÁNH SÁNG -->
+
+        <div class="card history chart-card">
+
+            <div class="chart-title">
+
+                <span>
+                    ☀️
+                </span>
+
+                <div>
+
+                    <h2>
+                        ÁNH SÁNG THEO THỜI GIAN
+                    </h2>
+
+                    <p>
+                        Theo dõi mức độ ánh sáng
+                    </p>
+
+                </div>
+
+            </div>
+
+            <div
+                id="lightHistoryChart">
+            </div>
+
+        </div>
+
+
+        <!-- GAS -->
+
+        <div class="card history chart-card">
+
+            <div class="chart-title">
+
+                <span>
+                    🛡️
+                </span>
+
+                <div>
+
+                    <h2>
+                        GAS THEO THỜI GIAN
+                    </h2>
+
+                    <p>
+                        Theo dõi mức gas (%)
+                    </p>
+
+                </div>
+
+            </div>
+
+            <div
+                id="gasHistoryChart">
+            </div>
+
+        </div>
+
+
+    </div>
+
+
+</div>
+
+
+<!-- =========================
+     JAVASCRIPT
+========================= -->
+
+<script src="/script.js"></script>
+```
+
+</body>
+
+</html>
