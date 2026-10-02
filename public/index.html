@@ -1,251 +1,263 @@
 <!DOCTYPE html>
-
 <html lang="vi">
 
 <head>
 
-```
-<meta charset="UTF-8">
+    <meta charset="UTF-8">
 
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0">
 
-<title>Smart Home Dashboard</title>
+    <meta
+        name="theme-color"
+        content="#111827">
 
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <meta
+        name="description"
+        content="Smart4 - Hệ thống giám sát IoT">
 
-<style>
+    <link
+        rel="manifest"
+        href="/manifest.json">
 
-    * {
-        box-sizing: border-box;
-    }
+    <title>Smart4 - Smart Home</title>
 
-    body {
-        margin: 0;
-        font-family: Arial, sans-serif;
-        background: #111827;
-        color: white;
-    }
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 
-    /* =========================
-       HEADER
-    ========================= */
+    <style>
 
-    header {
-        padding: 25px;
-        text-align: center;
-        background: #1f2937;
-    }
-
-    header h1 {
-        margin: 0;
-        font-size: 32px;
-    }
-
-    header p {
-        margin: 8px 0 0;
-        color: #9ca3af;
-    }
-
-    #connectionStatus {
-        margin-top: 12px;
-        color: #22c55e;
-        font-weight: bold;
-    }
-
-    /* =========================
-       CONTAINER
-    ========================= */
-
-    .container {
-        padding: 25px;
-        max-width: 1400px;
-        margin: auto;
-    }
-
-    /* =========================
-       AUTO BUTTON
-    ========================= */
-
-    .mode-card {
-        background: #1f2937;
-        border-radius: 15px;
-        padding: 20px;
-        margin-bottom: 20px;
-        border: 1px solid #374151;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
-
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 20px;
-    }
-
-    .mode-title {
-        font-size: 22px;
-        font-weight: bold;
-    }
-
-    .mode-description {
-        margin-top: 8px;
-        color: #9ca3af;
-    }
-
-    #autoModeBtn {
-        border: none;
-        padding: 14px 28px;
-        border-radius: 10px;
-        color: white;
-        font-size: 18px;
-        font-weight: bold;
-        cursor: pointer;
-        background: #6b7280;
-    }
-
-    #autoModeBtn.auto-on {
-        background: #16a34a;
-    }
-
-    #autoModeBtn.auto-off {
-        background: #6b7280;
-    }
-
-    /* =========================
-       SENSOR CARDS
-    ========================= */
-
-    .cards {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-    }
-
-    .card {
-        background: #1f2937;
-        border-radius: 15px;
-        padding: 20px;
-        text-align: center;
-    }
-
-    .sensor-card {
-        padding: 25px;
-        border: 1px solid #374151;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
-    }
-
-    .sensor-card h2 {
-        margin-top: 0;
-        margin-bottom: 10px;
-        font-size: 22px;
-    }
-
-    .sensor-status {
-        margin-top: 10px;
-        font-size: 18px;
-        font-weight: bold;
-        color: #22c55e;
-    }
-
-    /* =========================
-       GAUGE
-    ========================= */
-
-    .chart {
-        width: 100%;
-        height: 350px;
-    }
-
-    .value {
-        font-size: 30px;
-        font-weight: bold;
-        margin-top: 10px;
-    }
-
-    /* =========================
-       HISTORY
-    ========================= */
-
-    .history-charts {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-        margin-top: 20px;
-    }
-
-    .history {
-        margin-top: 0;
-    }
-
-    .chart-card {
-        padding: 25px;
-        border: 1px solid #374151;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-    }
-
-    .chart-title {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        margin-bottom: 10px;
-    }
-
-    .chart-title > span {
-        font-size: 35px;
-    }
-
-    .chart-title h2 {
-        margin: 5px 0 0;
-        font-size: 20px;
-    }
-
-    .chart-title p {
-        margin: 5px 0 0;
-        color: #9ca3af;
-        font-size: 14px;
-    }
-
-    #lightHistoryChart,
-    #gasHistoryChart {
-        width: 100%;
-        height: 380px;
-        margin-top: 10px;
-    }
-
-    /* =========================
-       MOBILE
-    ========================= */
-
-    @media (max-width: 900px) {
-
-        .cards {
-            grid-template-columns: 1fr;
+        * {
+            box-sizing: border-box;
         }
 
-        .history-charts {
-            grid-template-columns: 1fr;
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #111827;
+            color: white;
+        }
+
+        header {
+            padding: 25px;
+            text-align: center;
+            background: #1f2937;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 32px;
+        }
+
+        header p {
+            margin: 8px 0 0;
+            color: #9ca3af;
+        }
+
+        #connectionStatus {
+            margin-top: 12px;
+            color: #22c55e;
+            font-weight: bold;
+        }
+
+        .container {
+            padding: 25px;
+            max-width: 1400px;
+            margin: auto;
         }
 
         .mode-card {
-            flex-direction: column;
+            background: #1f2937;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #374151;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .mode-title {
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .mode-description {
+            margin-top: 8px;
+            color: #9ca3af;
+        }
+
+        #autoModeBtn {
+            border: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            background: #6b7280;
+        }
+
+        #autoModeBtn.auto-on {
+            background: #16a34a;
+        }
+
+        #autoModeBtn.auto-off {
+            background: #6b7280;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: #1f2937;
+            border-radius: 15px;
+            padding: 20px;
             text-align: center;
         }
 
-    }
+        .sensor-card {
+            padding: 25px;
+            border: 1px solid #374151;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+        }
 
-</style>
-```
+        .sensor-card h2 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 22px;
+        }
+
+        .sensor-status {
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #22c55e;
+        }
+
+        .chart {
+            width: 100%;
+            height: 350px;
+        }
+
+        .value {
+            font-size: 30px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .history-charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .history {
+            margin-top: 0;
+        }
+
+        .chart-card {
+            padding: 25px;
+            border: 1px solid #374151;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        }
+
+        .chart-title {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .chart-title > span {
+            font-size: 35px;
+        }
+
+        .chart-title h2 {
+            margin: 5px 0 0;
+            font-size: 20px;
+        }
+
+        .chart-title p {
+            margin: 5px 0 0;
+            color: #9ca3af;
+            font-size: 14px;
+        }
+
+        #lightHistoryChart,
+        #gasHistoryChart {
+            width: 100%;
+            height: 380px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 900px) {
+
+            .container {
+                padding: 12px;
+            }
+
+            header {
+                padding: 20px 12px;
+            }
+
+            header h1 {
+                font-size: 26px;
+            }
+
+            .cards {
+                grid-template-columns: 1fr;
+            }
+
+            .history-charts {
+                grid-template-columns: 1fr;
+            }
+
+            .mode-card {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .mode-title {
+                font-size: 20px;
+            }
+
+            .chart {
+                height: 280px;
+            }
+
+            #lightHistoryChart,
+            #gasHistoryChart {
+                height: 300px;
+            }
+
+            .value {
+                font-size: 26px;
+            }
+
+            .sensor-card {
+                padding: 15px;
+            }
+
+            .chart-card {
+                padding: 15px;
+            }
+        }
+
+    </style>
 
 </head>
 
 <body>
-
-```
-<!-- =========================
-     HEADER
-========================= -->
 
 <header>
 
@@ -254,7 +266,7 @@
     </h1>
 
     <p>
-        IoT Monitoring System
+        Smart4 - IoT Monitoring System
     </p>
 
     <div id="connectionStatus">
@@ -263,17 +275,7 @@
 
 </header>
 
-
-<!-- =========================
-     NỘI DUNG
-========================= -->
-
 <div class="container">
-
-
-    <!-- =========================
-         CHẾ ĐỘ AUTO / MANUAL
-    ========================= -->
 
     <div class="mode-card">
 
@@ -293,7 +295,6 @@
 
         </div>
 
-
         <button
             id="autoModeBtn"
             class="auto-off"
@@ -305,15 +306,7 @@
 
     </div>
 
-
-    <!-- =========================
-         2 SENSOR
-    ========================= -->
-
     <div class="cards">
-
-
-        <!-- ÁNH SÁNG -->
 
         <div class="card sensor-card">
 
@@ -344,9 +337,6 @@
 
         </div>
 
-
-        <!-- GAS -->
-
         <div class="card sensor-card">
 
             <h2>
@@ -376,18 +366,9 @@
 
         </div>
 
-
     </div>
 
-
-    <!-- =========================
-         LỊCH SỬ
-    ========================= -->
-
     <div class="history-charts">
-
-
-        <!-- ÁNH SÁNG -->
 
         <div class="card history chart-card">
 
@@ -417,9 +398,6 @@
 
         </div>
 
-
-        <!-- GAS -->
-
         <div class="card history chart-card">
 
             <div class="chart-title">
@@ -448,19 +426,40 @@
 
         </div>
 
-
     </div>
-
 
 </div>
 
-
-<!-- =========================
-     JAVASCRIPT
-========================= -->
-
 <script src="/script.js"></script>
-```
+
+<script>
+
+    // Đăng ký Service Worker để Smart4 có thể hoạt động như PWA
+    if ("serviceWorker" in navigator) {
+
+        window.addEventListener("load", function () {
+
+            navigator.serviceWorker
+                .register("/service-worker.js")
+                .then(function () {
+
+                    console.log("Smart4 Service Worker: OK");
+
+                })
+                .catch(function (error) {
+
+                    console.error(
+                        "Smart4 Service Worker lỗi:",
+                        error
+                    );
+
+                });
+
+        });
+
+    }
+
+</script>
 
 </body>
 

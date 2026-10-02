@@ -1,0 +1,12 @@
+{
+    "name": "Smart4 - Smart Home",
+    "short_name": "Smart4",
+    "description": "Hệ thống giám sát IoT Smart4",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#111827",
+    "theme_color": "#111827",
+    "orientation": "portrait",
+    "lang": "vi",
+    "scope": "/"
+}
