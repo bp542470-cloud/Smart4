@@ -3,8 +3,22 @@
   "author": "Phan Nhan",
   "editor": "wokwi",
   "parts": [
-    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
-    { "type": "wokwi-gas-sensor", "id": "gas1", "top": 0, "left": 0, "attrs": {"ppm": "100" }},
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-gas-sensor",
+      "id": "gas1",
+      "top": 0,
+      "left": 0,
+      "attrs": {
+        "ppm": "100"
+      }
+    },
     {
       "type": "wokwi-photoresistor-sensor",
       "id": "ldr1",
@@ -13,21 +27,32 @@
       "attrs": {}
     },
     {
+      "type": "wokwi-dht22",
+      "id": "dht1",
+      "top": -200,
+      "left": -100,
+      "attrs": {}
+    },
+    {
       "type": "wokwi-buzzer",
       "id": "bz1",
       "top": -141.6,
       "left": 174.6,
-      "attrs": { "volume": "1" }
+      "attrs": {
+        "volume": "1"
+      }
     },
     {
       "type": "wokwi-led",
       "id": "led1",
       "top": -147.6,
       "left": 51.8,
-      "attrs": { "color": "red" }
+      "attrs": {
+        "color": "red"
+      }
     }
   ],
-   "connections": [
+  "connections": [
     ["esp:TX", "$serialMonitor:RX", "", []],
     ["esp:RX", "$serialMonitor:TX", "", []],
 
@@ -43,8 +68,11 @@
 
     ["gas1:VCC", "esp:5V", "red", []],
     ["gas1:GND", "esp:GND.2", "black", []],
-    ["gas1:AOUT", "esp:34", "green", []]
-  ],
+    ["gas1:AOUT", "esp:34", "green", []],
 
+    ["dht1:VCC", "esp:3V3", "red", []],
+    ["dht1:GND", "esp:GND.2", "black", []],
+    ["dht1:SDA", "esp:5", "green", []]
+  ],
   "dependencies": {}
 }

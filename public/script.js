@@ -1,7 +1,9 @@
+
 "use strict";
 
 // ==================================================
-// SMART4 DASHBOARD - ESP32-C5 - GAS + LIGHT
+// SMART4 DASHBOARD
+// GAS - LIGHT - ALCOHOL - SMOKE
 // ==================================================
 
 const API_SENSOR = "/api/sensor";
@@ -46,14 +48,19 @@ function finiteNumber(value) {
     return Number.isFinite(number) ? number : null;
 }
 
+function formatNumber(value, digits = 1) {
+    if (value === null || value === undefined) return "--";
+
+    return Number(value).toLocaleString("vi-VN", {
+        maximumFractionDigits: digits
+    });
+}
+
 function formatTime(value) {
     if (!value) return "--";
 
     const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-        return "--";
-    }
+    if (Number.isNaN(date.getTime())) return "--";
 
     return date.toLocaleTimeString("vi-VN", {
         hour: "2-digit",
@@ -102,13 +109,14 @@ function normalizeRows(result) {
 }
 
 // ==================================================
-// ĐỒNG HỒ CẢM BIẾN
+// 1. ĐỒNG HỒ CẢM BIẾN
 // ==================================================
 
 function createGauge(elementId, title, unit, min, max) {
     const element = $(elementId);
 
     if (!element || typeof echarts === "undefined") {
+        console.warn(`Không tìm thấy đồng hồ: ${elementId}`);
         return null;
     }
 
@@ -116,7 +124,7 @@ function createGauge(elementId, title, unit, min, max) {
         echarts.getInstanceByDom(element) || echarts.init(element);
 
     chart.setOption({
-        animationDuration: 350,
+        animationDuration: 250,
 
         series: [{
             type: "gauge",
@@ -185,12 +193,12 @@ function createGauge(elementId, title, unit, min, max) {
                 show: true,
                 valueAnimation: true,
                 offsetCenter: [0, "28%"],
-                fontSize: 22,
+                fontSize: 19,
                 fontWeight: "bold",
                 color: "#f8fafc",
 
                 formatter(value) {
-                    return `${Number(value).toFixed(1)} ${unit}`;
+                    return `${formatNumber(value)} ${unit}`;
                 }
             },
 
@@ -227,17 +235,25 @@ function initGauges() {
     gauges.light = createGauge(
         "lightGauge", "Ánh sáng", "lux", 0, 20000
     );
+
+    gauges.alcohol = createGauge(
+        "alcoholGauge", "Hơi cồn", "ppm", 0, 10000
+    );
+
+    gauges.smoke = createGauge(
+        "smokeGauge", "Chỉ số khói", "µg/m³", 0, 5000
+    );
 }
 
 // ==================================================
-// BIỂU ĐỒ LỊCH SỬ
-// Biểu đồ chỉ dùng dữ liệu từ API /api/history.
+// 2. BIỂU ĐỒ LỊCH SỬ
 // ==================================================
 
 function createLineChart(elementId, title, unit) {
     const element = $(elementId);
 
     if (!element || typeof echarts === "undefined") {
+        console.warn(`Không tìm thấy biểu đồ: ${elementId}`);
         return null;
     }
 
@@ -246,7 +262,7 @@ function createLineChart(elementId, title, unit) {
 
     chart.setOption({
         backgroundColor: "transparent",
-        animationDuration: 300,
+        animationDuration: 250,
 
         tooltip: {
             trigger: "axis",
@@ -260,16 +276,17 @@ function createLineChart(elementId, title, unit) {
                 return `${item.axisValue}<br>${title}: ${
                     value === null
                         ? "Không có dữ liệu"
-                        : `${value.toFixed(1)} ${unit}`
+                        : `${formatNumber(value)} ${unit}`
                 }`;
             }
         },
 
         grid: {
-            left: 58,
+            left: 70,
             right: 20,
             top: 25,
-            bottom: 45
+            bottom: 45,
+            containLabel: false
         },
 
         xAxis: {
@@ -298,7 +315,10 @@ function createLineChart(elementId, title, unit) {
             scale: true,
 
             axisLabel: {
-                color: "#94a3b8"
+                color: "#94a3b8",
+                formatter(value) {
+                    return Number(value).toLocaleString("vi-VN");
+                }
             },
 
             axisTick: {
@@ -316,18 +336,18 @@ function createLineChart(elementId, title, unit) {
             name: title,
             type: "line",
             data: [],
-            smooth: true,
+            smooth: 0.2,
             connectNulls: false,
             showSymbol: true,
             symbol: "circle",
-            symbolSize: 5,
+            symbolSize: 4,
 
             lineStyle: {
                 width: 3
             },
 
             areaStyle: {
-                opacity: 0.1
+                opacity: 0.08
             }
         }],
 
@@ -355,6 +375,14 @@ function initCharts() {
 
     charts.light = createLineChart(
         "lightChart", "Ánh sáng", "lux"
+    );
+
+    charts.alcohol = createLineChart(
+        "alcoholChart", "Hơi cồn", "ppm"
+    );
+
+    charts.smoke = createLineChart(
+        "smokeChart", "Chỉ số khói", "µg/m³"
     );
 }
 
@@ -405,7 +433,9 @@ function updateHistoryChart(chart, rows, field, title) {
             silent: true,
 
             style: {
-                text: values.length ? "" : "Chưa có dữ liệu lịch sử",
+                text: values.length
+                    ? ""
+                    : "Chưa có dữ liệu lịch sử",
                 fill: "#94a3b8",
                 fontSize: 13
             }
@@ -433,7 +463,10 @@ async function loadHistory() {
                 ? new Date(b.created_at).getTime()
                 : NaN;
 
-            if (Number.isFinite(timeA) && Number.isFinite(timeB)) {
+            if (
+                Number.isFinite(timeA) &&
+                Number.isFinite(timeB)
+            ) {
                 return timeA - timeB;
             }
 
@@ -443,9 +476,6 @@ async function loadHistory() {
             if (idA !== null && idB !== null) {
                 return idA - idB;
             }
-
-            if (Number.isFinite(timeA)) return -1;
-            if (Number.isFinite(timeB)) return 1;
 
             return 0;
         });
@@ -460,6 +490,20 @@ async function loadHistory() {
             charts.light, recentRows, "light", "Ánh sáng"
         );
 
+        updateHistoryChart(
+            charts.alcohol,
+            recentRows,
+            "alcohol_ppm",
+            "Hơi cồn"
+        );
+
+        updateHistoryChart(
+            charts.smoke,
+            recentRows,
+            "smoke_ugm3",
+            "Chỉ số khói"
+        );
+
         console.log(`[HISTORY] Đã tải ${recentRows.length} bản ghi.`);
     } catch (error) {
         console.error("[HISTORY] Lỗi tải lịch sử:", error);
@@ -469,7 +513,7 @@ async function loadHistory() {
 }
 
 // ==================================================
-// DỮ LIỆU CẢM BIẾN MỚI NHẤT
+// 3. DỮ LIỆU CẢM BIẾN
 // ==================================================
 
 async function loadSensor() {
@@ -483,17 +527,21 @@ async function loadSensor() {
 
         const gas = finiteNumber(sensor.gas);
         const light = finiteNumber(sensor.light);
+        const alcohol = finiteNumber(sensor.alcohol_ppm);
+        const smoke = finiteNumber(sensor.smoke_ugm3);
 
         updateGauge(gauges.gas, gas, "Khí gas", 0, 100);
         updateGauge(gauges.light, light, "Ánh sáng", 0, 20000);
+        updateGauge(gauges.alcohol, alcohol, "Hơi cồn", 0, 10000);
+        updateGauge(gauges.smoke, smoke, "Chỉ số khói", 0, 5000);
 
         setText(
             "gasNote",
             gas === null
                 ? "Chưa có dữ liệu gas"
                 : gas > 35
-                    ? `⚠️ Gas ${gas.toFixed(1)}% — vượt ngưỡng 35%`
-                    : `Gas ${gas.toFixed(1)}% — dưới ngưỡng 35%`
+                    ? `⚠️ Gas ${formatNumber(gas)}% — vượt ngưỡng 35%`
+                    : `Gas ${formatNumber(gas)}% — dưới ngưỡng 35%`
         );
 
         setText(
@@ -501,8 +549,22 @@ async function loadSensor() {
             light === null
                 ? "Chưa có dữ liệu ánh sáng"
                 : light < 300
-                    ? `🌙 ${light.toFixed(1)} lux — thiếu sáng`
-                    : `☀️ ${light.toFixed(1)} lux — đủ sáng`
+                    ? `🌙 ${formatNumber(light)} lux — thiếu sáng`
+                    : `☀️ ${formatNumber(light)} lux — đủ sáng`
+        );
+
+        setText(
+            "alcoholNote",
+            alcohol === null
+                ? "Đang chờ dữ liệu hơi cồn"
+                : `Chỉ số hơi cồn: ${formatNumber(alcohol, 0)} ppm`
+        );
+
+        setText(
+            "smokeNote",
+            smoke === null
+                ? "Đang chờ dữ liệu khói"
+                : `Chỉ số khói: ${formatNumber(smoke, 0)} µg/m³`
         );
 
         setText(
@@ -517,17 +579,21 @@ async function loadSensor() {
         setText("backendState", "Hoạt động");
         setClass("backendState", "state-on");
 
-        console.log("[SENSOR]", sensor);
+        console.log("[SENSOR]", {
+            gas,
+            light,
+            alcohol_ppm: alcohol,
+            smoke_ugm3: smoke
+        });
     } catch (error) {
         console.error("[SENSOR] Không tải được dữ liệu:", error);
-
         setText("backendState", "Lỗi API");
         setClass("backendState", "state-off");
     }
 }
 
 // ==================================================
-// TRẠNG THÁI THIẾT BỊ
+// 4. TRẠNG THÁI THIẾT BỊ
 // ==================================================
 
 function updateDeviceStatus(result) {
@@ -540,21 +606,12 @@ function updateDeviceStatus(result) {
     const mqttConnected = result.mqttConnected === true;
     const hasDeviceStatus = Boolean(device.updatedAt);
 
-    setText(
-        "mqttState",
-        mqttConnected ? "Đã kết nối" : "Mất kết nối"
-    );
-
-    setClass(
-        "mqttState",
-        mqttConnected ? "state-on" : "state-off"
-    );
+    setText("mqttState", mqttConnected ? "Đã kết nối" : "Mất kết nối");
+    setClass("mqttState", mqttConnected ? "state-on" : "state-off");
 
     setText(
         "connectionBadge",
-        mqttConnected
-            ? "● MQTT đã kết nối"
-            : "● MQTT mất kết nối"
+        mqttConnected ? "● MQTT đã kết nối" : "● MQTT mất kết nối"
     );
 
     setText(
@@ -567,11 +624,7 @@ function updateDeviceStatus(result) {
         hasDeviceStatus ? "state-on" : "state-unknown"
     );
 
-    setText(
-        "modeState",
-        currentMode === "auto" ? "Tự động" : "Thủ công"
-    );
-
+    setText("modeState", currentMode === "auto" ? "Tự động" : "Thủ công");
     setClass(
         "modeState",
         currentMode === "auto" ? "state-on" : "state-unknown"
@@ -580,15 +633,8 @@ function updateDeviceStatus(result) {
     setText("ledState", currentLed ? "Đang bật" : "Đang tắt");
     setClass("ledState", currentLed ? "state-on" : "state-off");
 
-    setText(
-        "buzzerState",
-        currentBuzzer ? "Đang bật" : "Đang tắt"
-    );
-
-    setClass(
-        "buzzerState",
-        currentBuzzer ? "state-on" : "state-off"
-    );
+    setText("buzzerState", currentBuzzer ? "Đang bật" : "Đang tắt");
+    setClass("buzzerState", currentBuzzer ? "state-on" : "state-off");
 
     const autoButton = $("autoModeButton");
     const manualButton = $("manualModeButton");
@@ -669,7 +715,7 @@ async function loadStatus() {
 }
 
 // ==================================================
-// ĐIỀU KHIỂN THIẾT BỊ
+// 5. ĐIỀU KHIỂN THIẾT BỊ
 // ==================================================
 
 async function sendControl(command) {
@@ -699,17 +745,12 @@ async function sendControl(command) {
             result.message || "Backend đã nhận lệnh điều khiển."
         );
 
-        console.log("[CONTROL] Lệnh:", command);
-        console.log("[CONTROL] Phản hồi:", result);
+        console.log("[CONTROL]", command, result);
 
         await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
         console.error("[CONTROL] Gửi lệnh thất bại:", error);
-
-        setText(
-            "controlMessage",
-            `Không gửi được lệnh: ${error.message}`
-        );
+        setText("controlMessage", `Không gửi được lệnh: ${error.message}`);
     } finally {
         controlBusy = false;
         await loadStatus();
@@ -731,9 +772,7 @@ function setManualMode() {
 function toggleLed() {
     const ledSwitch = $("ledSwitch");
 
-    if (!ledSwitch || currentMode !== "manual" || controlBusy) {
-        return;
-    }
+    if (!ledSwitch || currentMode !== "manual" || controlBusy) return;
 
     sendControl({
         mode: "manual",
@@ -745,9 +784,7 @@ function toggleLed() {
 function toggleBuzzer() {
     const buzzerSwitch = $("buzzerSwitch");
 
-    if (!buzzerSwitch || currentMode !== "manual" || controlBusy) {
-        return;
-    }
+    if (!buzzerSwitch || currentMode !== "manual" || controlBusy) return;
 
     sendControl({
         mode: "manual",
@@ -762,7 +799,7 @@ window.toggleLed = toggleLed;
 window.toggleBuzzer = toggleBuzzer;
 
 // ==================================================
-// KHỞI ĐỘNG
+// 6. KHỞI ĐỘNG DASHBOARD
 // ==================================================
 
 document.addEventListener("DOMContentLoaded", async function () {
@@ -789,10 +826,6 @@ document.addEventListener("DOMContentLoaded", async function () {
     console.log("Smart4 Dashboard đã khởi động.");
 });
 
-// ==================================================
-// TỐI ƯU KHI QUAY LẠI TAB HOẶC ĐỔI KÍCH THƯỚC
-// ==================================================
-
 function resizeAllCharts() {
     Object.values(gauges).forEach(chart => {
         if (chart) chart.resize();
@@ -807,7 +840,6 @@ document.addEventListener("visibilitychange", function () {
     if (document.hidden) return;
 
     resizeAllCharts();
-
     loadSensor();
     loadStatus();
     loadHistory();

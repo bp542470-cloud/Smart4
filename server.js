@@ -10,10 +10,6 @@ const path = require("path");
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// ==================================================
-// 1. CAU HINH SMART4 - EMQX
-// ==================================================
-
 const MQTT_HOST = process.env.EMQX_HOST;
 const MQTT_PORT = Number(process.env.EMQX_PORT) || 8883;
 const MQTT_USERNAME = process.env.EMQX_USERNAME;
@@ -28,10 +24,6 @@ const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const SAVE_INTERVAL_MS = 1000;
 
-// ==================================================
-// 2. KIEM TRA BIEN MOI TRUONG
-// ==================================================
-
 const requiredEnv = [
     "EMQX_HOST",
     "EMQX_USERNAME",
@@ -40,10 +32,10 @@ const requiredEnv = [
     "SUPABASE_SECRET_KEY"
 ];
 
-const missingEnv = requiredEnv.filter((key) => {
-    const value = process.env[key];
-    return !value || value.startsWith("YOUR_");
-});
+const missingEnv = requiredEnv.filter(key =>
+    !process.env[key] ||
+    process.env[key].startsWith("YOUR_")
+);
 
 if (missingEnv.length > 0) {
     console.error(
@@ -59,14 +51,10 @@ if (
     MQTT_HOST.includes(":")
 ) {
     console.error(
-        "EMQX_HOST chi nhap hostname, khong nhap https://, port hoac /api/v5."
+        "EMQX_HOST chi nhap hostname, khong nhap giao thuc hoac port."
     );
     process.exit(1);
 }
-
-// ==================================================
-// 3. KET NOI SUPABASE
-// ==================================================
 
 const supabase = createClient(
     SUPABASE_URL,
@@ -79,10 +67,6 @@ const supabase = createClient(
     }
 );
 
-// ==================================================
-// 4. CAU HINH EXPRESS
-// ==================================================
-
 app.use(express.json({ limit: "20kb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -90,9 +74,7 @@ app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ==================================================
-// 5. TRANG THAI HE THONG
-// ==================================================
+/* DU LIEU CAM BIEN MOI NHAT */
 
 let latestSensor = null;
 
@@ -105,26 +87,59 @@ let latestDeviceStatus = {
 
 let mqttConnected = false;
 let lastSupabaseSaveAt = 0;
-
 let sensorMessagesReceived = 0;
 let sensorRowsSaved = 0;
 let sensorRowsSkipped = 0;
 
-// ==================================================
-// 6. KET NOI EMQX QUA TLS
-// ==================================================
+/*
+ * ALCOHOL VA SMOKE LA GIA TRI UOC TINH
+ * TU GAS DE HIEN THI TREN DASHBOARD.
+ *
+ * KHONG PHAI CONG THUC HIEU CHUAN CAM BIEN.
+ * KHONG DUNG CHO MUC DICH AN TOAN.
+ */
+function calculateEstimates(gas) {
+    const safeGas = Math.max(0, Math.min(100, gas));
+
+    return {
+        alcohol_ppm: Math.round(safeGas * 100),
+        smoke_ugm3: Math.round(safeGas * 50)
+    };
+}
+
+/*
+ * DAM BAO BAN GHI CO DAY DU CAC TRUONG UOC TINH.
+ * Neu ban ghi cu bi null, tinh lai tu gas de hien thi.
+ */
+function normalizeSensorRow(row) {
+    const gas = Number(row.gas);
+    const light = Number(row.light);
+
+    const estimates = calculateEstimates(gas);
+
+    return {
+        id: row.id,
+        gas,
+        light,
+        alcohol_ppm: row.alcohol_ppm == null
+            ? estimates.alcohol_ppm
+            : Number(row.alcohol_ppm),
+        smoke_ugm3: row.smoke_ugm3 == null
+            ? estimates.smoke_ugm3
+            : Number(row.smoke_ugm3),
+        created_at: row.created_at
+    };
+}
+
+/* KET NOI EMQX */
 
 const mqttUrl = `mqtts://${MQTT_HOST}:${MQTT_PORT}`;
 
 const mqttClient = mqtt.connect(mqttUrl, {
     username: MQTT_USERNAME,
     password: MQTT_PASSWORD,
-
-    clientId:
-        `smart4_backend_${Math.random()
-            .toString(16)
-            .slice(2, 10)}`,
-
+    clientId: `smart4_backend_${Math.random()
+        .toString(16).slice(2, 10)}`,
     clean: true,
     connectTimeout: 15000,
     reconnectPeriod: 5000,
@@ -139,7 +154,7 @@ mqttClient.on("connect", () => {
     mqttClient.subscribe(
         [TOPIC_SENSOR, TOPIC_STATUS],
         { qos: 0 },
-        (error) => {
+        error => {
             if (error) {
                 console.error(
                     "MQTT SUBSCRIBE LOI:",
@@ -167,16 +182,18 @@ mqttClient.on("offline", () => {
     console.log("EMQX MQTT: OFFLINE");
 });
 
-mqttClient.on("error", (error) => {
+mqttClient.on("error", error => {
     mqttConnected = false;
     console.error("EMQX MQTT ERROR:", error.message);
 });
 
-// ==================================================
-// 7. LUU DU LIEU CAM BIEN VAO SUPABASE
-// ==================================================
-
-async function saveSensorToSupabase(gas, light) {
+/*
+ * LUU DU LIEU CAM BIEN VAO SUPABASE.
+ *
+ * TINH LAI ALCOHOL VA SMOKE TU GAS NGAY TRUOC KHI INSERT,
+ * KHONG SU DUNG GIA TRI DAU VAO CO THE BI THIEU.
+ */
+async function saveSensorToSupabase(sensor) {
     const now = Date.now();
 
     if (now - lastSupabaseSaveAt < SAVE_INTERVAL_MS) {
@@ -187,15 +204,21 @@ async function saveSensorToSupabase(gas, light) {
     lastSupabaseSaveAt = now;
 
     try {
+        const estimates = calculateEstimates(sensor.gas);
+
         const record = {
-            gas,
-            light,
+            gas: sensor.gas,
+            light: sensor.light,
+            alcohol_ppm: estimates.alcohol_ppm,
+            smoke_ugm3: estimates.smoke_ugm3,
             created_at: new Date().toISOString()
         };
 
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from("sensor_data")
-            .insert([record]);
+            .insert([record])
+            .select("id")
+            .single();
 
         if (error) {
             console.error(
@@ -208,17 +231,18 @@ async function saveSensorToSupabase(gas, light) {
         sensorRowsSaved++;
 
         console.log(
-            `SUPABASE SAVED: Gas=${gas.toFixed(1)}%, ` +
-            `Light=${light.toFixed(1)} lux`
+            `SUPABASE SAVED: ID=${data.id}, ` +
+            `Gas=${record.gas.toFixed(1)}%, ` +
+            `Light=${record.light.toFixed(1)} lux, ` +
+            `Alcohol estimate=${record.alcohol_ppm} ppm, ` +
+            `Smoke estimate=${record.smoke_ugm3} ug/m3`
         );
     } catch (error) {
         console.error("SUPABASE ERROR:", error.message);
     }
 }
 
-// ==================================================
-// 8. NHAN DU LIEU MQTT
-// ==================================================
+/* NHAN DU LIEU MQTT */
 
 mqttClient.on("message", async (topic, message) => {
     let data;
@@ -230,42 +254,48 @@ mqttClient.on("message", async (topic, message) => {
         return;
     }
 
-    // 8.1. DU LIEU GAS VA ANH SANG
-
     if (topic === TOPIC_SENSOR) {
         const gas = Number(data.gas);
         const light = Number(data.light);
 
         if (
             !Number.isFinite(gas) ||
-            !Number.isFinite(light)
+            !Number.isFinite(light) ||
+            gas < 0 ||
+            gas > 100 ||
+            light < 0
         ) {
             console.error("DU LIEU GAS/LIGHT KHONG HOP LE");
             return;
         }
 
-        sensorMessagesReceived++;
+        const estimates = calculateEstimates(gas);
 
-        latestSensor = {
+        const sensor = {
             gas,
             light,
+            alcohol_ppm: estimates.alcohol_ppm,
+            smoke_ugm3: estimates.smoke_ugm3,
+            estimatesOnly: true,
             receivedAt: new Date().toISOString()
         };
 
+        latestSensor = sensor;
+        sensorMessagesReceived++;
+
         console.log(
             `SENSOR: Gas=${gas.toFixed(1)}%, ` +
-            `Light=${light.toFixed(1)} lux`
+            `Light=${light.toFixed(1)} lux, ` +
+            `Alcohol estimate=${sensor.alcohol_ppm} ppm, ` +
+            `Smoke estimate=${sensor.smoke_ugm3} ug/m3`
         );
 
-        await saveSensorToSupabase(gas, light);
+        await saveSensorToSupabase(sensor);
         return;
     }
 
-    // 8.2. TRANG THAI ESP32
-
     if (topic === TOPIC_STATUS) {
-        const validMode =
-            ["auto", "manual"].includes(data.mode);
+        const validMode = ["auto", "manual"].includes(data.mode);
 
         if (!validMode) {
             console.error("STATUS: MODE KHONG HOP LE");
@@ -276,9 +306,7 @@ mqttClient.on("message", async (topic, message) => {
             typeof data.led !== "boolean" ||
             typeof data.buzzer !== "boolean"
         ) {
-            console.error(
-                "STATUS: LED HOAC BUZZER KHONG HOP LE"
-            );
+            console.error("STATUS: LED HOAC BUZZER KHONG HOP LE");
             return;
         }
 
@@ -297,9 +325,7 @@ mqttClient.on("message", async (topic, message) => {
     }
 });
 
-// ==================================================
-// 9. API DU LIEU CAM BIEN MOI NHAT
-// ==================================================
+/* API CAM BIEN MOI NHAT */
 
 app.get("/api/sensor", async (req, res) => {
     try {
@@ -312,22 +338,35 @@ app.get("/api/sensor", async (req, res) => {
 
         const { data, error } = await supabase
             .from("sensor_data")
-            .select("id, gas, light, created_at")
+            .select(
+                "id, gas, light, alcohol_ppm, smoke_ugm3, created_at"
+            )
             .order("id", { ascending: false })
             .limit(1);
 
-        if (error) {
-            throw error;
+        if (error) throw error;
+
+        const row = data && data.length > 0 ? data[0] : null;
+
+        if (!row) {
+            return res.json({
+                success: true,
+                gas: null,
+                light: null,
+                alcohol_ppm: null,
+                smoke_ugm3: null,
+                estimatesOnly: true,
+                receivedAt: null
+            });
         }
 
-        const row =
-            data && data.length > 0 ? data[0] : null;
+        const normalized = normalizeSensorRow(row);
 
         return res.json({
             success: true,
-            gas: row ? Number(row.gas) : null,
-            light: row ? Number(row.light) : null,
-            receivedAt: row ? row.created_at : null
+            ...normalized,
+            estimatesOnly: true,
+            receivedAt: row.created_at
         });
     } catch (error) {
         console.error("API SENSOR ERROR:", error.message);
@@ -339,33 +378,27 @@ app.get("/api/sensor", async (req, res) => {
     }
 });
 
-// ==================================================
-// 10. API LICH SU CAM BIEN
-// ==================================================
+/* API LICH SU 30 MAU */
 
 app.get("/api/history", async (req, res) => {
     try {
         const { data, error } = await supabase
             .from("sensor_data")
-            .select("id, gas, light, created_at")
+            .select(
+                "id, gas, light, alcohol_ppm, smoke_ugm3, created_at"
+            )
             .order("id", { ascending: false })
             .limit(30);
 
-        if (error) {
-            throw error;
-        }
+        if (error) throw error;
 
         const history = (data || [])
-            .reverse()
-            .map((row) => ({
-                id: row.id,
-                gas: Number(row.gas),
-                light: Number(row.light),
-                created_at: row.created_at
-            }));
+            .map(normalizeSensorRow)
+            .reverse();
 
         return res.json({
             success: true,
+            estimatesOnly: true,
             data: history
         });
     } catch (error) {
@@ -378,9 +411,7 @@ app.get("/api/history", async (req, res) => {
     }
 });
 
-// ==================================================
-// 11. API TRANG THAI MQTT VA ESP32
-// ==================================================
+/* API TRANG THAI */
 
 app.get("/api/status", (req, res) => {
     res.json({
@@ -390,9 +421,7 @@ app.get("/api/status", (req, res) => {
     });
 });
 
-// ==================================================
-// 12. API DIEU KHIEN DEN VA COI
-// ==================================================
+/* API DIEU KHIEN LED VA BUZZER */
 
 app.post("/api/control", (req, res) => {
     if (!mqttConnected) {
@@ -432,11 +461,8 @@ app.post("/api/control", (req, res) => {
     mqttClient.publish(
         TOPIC_CONTROL,
         JSON.stringify(command),
-        {
-            qos: 0,
-            retain: false
-        },
-        (error) => {
+        { qos: 0, retain: false },
+        error => {
             if (error) {
                 console.error(
                     "PUBLISH CONTROL ERROR:",
@@ -455,9 +481,7 @@ app.post("/api/control", (req, res) => {
     });
 });
 
-// ==================================================
-// 13. HEALTH CHECK
-// ==================================================
+/* API KIEM TRA BACKEND */
 
 app.get("/health", (req, res) => {
     res.json({
@@ -472,9 +496,7 @@ app.get("/health", (req, res) => {
     });
 });
 
-// ==================================================
-// 14. KHOI DONG SERVER
-// ==================================================
+/* KHOI DONG WEB SERVER */
 
 const server = app.listen(PORT, "0.0.0.0", () => {
     console.log("==================================");
@@ -487,33 +509,25 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`STATUS TOPIC: ${TOPIC_STATUS}`);
     console.log(`SUPABASE SAVE INTERVAL: ${SAVE_INTERVAL_MS} ms`);
     console.log("DATABASE: SUPABASE");
+    console.log("NOTE: ALCOHOL/SMOKE ARE DEMONSTRATION ESTIMATES");
     console.log("==================================");
 });
 
-// ==================================================
-// 15. DONG KET NOI KHI DUNG SERVER
-// ==================================================
+/* DUNG SERVER AN TOAN */
 
 let isShuttingDown = false;
 
 function shutdown() {
-    if (isShuttingDown) {
-        return;
-    }
+    if (isShuttingDown) return;
 
     isShuttingDown = true;
-
     console.log("Dang dung Smart4...");
 
     mqttClient.end(false, () => {
-        server.close(() => {
-            process.exit(0);
-        });
+        server.close(() => process.exit(0));
     });
 
-    setTimeout(() => {
-        process.exit(0);
-    }, 5000).unref();
+    setTimeout(() => process.exit(0), 5000).unref();
 }
 
 process.on("SIGINT", shutdown);

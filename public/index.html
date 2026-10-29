@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -6,7 +7,6 @@
     <meta name="theme-color" content="#0b1120">
     <title>Smart4 Dashboard</title>
 
-    <!-- Thư viện biểu đồ -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
     <script src="/script.js" defer></script>
 
@@ -25,9 +25,7 @@
             --radius: 18px;
         }
 
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         html {
             width: 100%;
@@ -47,23 +45,14 @@
             overflow-x: hidden;
         }
 
-        button,
-        input {
-            font: inherit;
-        }
-
-        button {
-            -webkit-tap-highlight-color: transparent;
-            touch-action: manipulation;
-        }
+        button, input { font: inherit; }
+        button { touch-action: manipulation; }
 
         .container {
             width: 100%;
             max-width: 1500px;
             margin: 0 auto;
         }
-
-        /* ================= HEADER ================= */
 
         header {
             display: flex;
@@ -78,7 +67,6 @@
             margin: 0 0 5px;
             font-size: clamp(25px, 3vw, 34px);
             line-height: 1.25;
-            overflow-wrap: anywhere;
         }
 
         .subtitle {
@@ -96,18 +84,13 @@
             overflow-wrap: anywhere;
         }
 
-        /* ================= LAYOUT ================= */
-
-        .sensor-grid,
-        .panel-grid {
+        .sensor-grid, .panel-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 20px;
         }
 
-        .sensor-grid {
-            margin-bottom: 22px;
-        }
+        .sensor-grid { margin-bottom: 22px; }
 
         .card {
             min-width: 0;
@@ -130,8 +113,6 @@
             line-height: 1.4;
         }
 
-        /* ================= GAUGES ================= */
-
         .gauge {
             width: 100%;
             height: 270px;
@@ -146,15 +127,11 @@
             overflow-wrap: anywhere;
         }
 
-        /* ================= CHARTS ================= */
-
         .chart {
             width: 100%;
             height: 300px;
             min-width: 0;
         }
-
-        /* ================= BUTTONS ================= */
 
         .button-row {
             display: flex;
@@ -172,39 +149,16 @@
             font-size: 15px;
             font-weight: 700;
             cursor: pointer;
-            transition: filter 0.2s, transform 0.15s;
         }
 
-        button:active:not(:disabled) {
-            transform: scale(0.98);
-        }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        button:hover:not(:disabled) { filter: brightness(1.12); }
+        button.active { outline: 2px solid white; outline-offset: 2px; }
 
-        button:hover:not(:disabled) {
-            filter: brightness(1.12);
-        }
+        .auto-button { background: #15803d; }
+        .manual-button { background: #0369a1; }
 
-        button:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-        }
-
-        .auto-button {
-            background: #15803d;
-        }
-
-        .manual-button {
-            background: #0369a1;
-        }
-
-        button.active {
-            outline: 2px solid white;
-            outline-offset: 2px;
-        }
-
-        /* ================= DEVICE STATUS ================= */
-
-        .device-row,
-        .status-row {
+        .device-row, .status-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -213,30 +167,11 @@
             border-bottom: 1px solid var(--border);
         }
 
-        .device-row:last-child,
-        .status-row:last-child {
-            border-bottom: none;
-        }
+        .device-row:last-child, .status-row:last-child { border-bottom: none; }
 
-        .device-info {
-            min-width: 0;
-            flex: 1;
-        }
-
-        .device-name {
-            margin-bottom: 4px;
-            font-size: 16px;
-            font-weight: 600;
-            overflow-wrap: anywhere;
-        }
-
-        .device-row small {
-            display: block;
-            color: var(--muted);
-            font-size: 13px;
-            line-height: 1.55;
-            overflow-wrap: anywhere;
-        }
+        .device-info { min-width: 0; flex: 1; }
+        .device-name { margin-bottom: 4px; font-size: 16px; font-weight: 600; }
+        .device-row small { display: block; color: var(--muted); font-size: 13px; line-height: 1.55; }
 
         .device-control {
             display: flex;
@@ -246,21 +181,9 @@
             flex-shrink: 0;
         }
 
-        .state-on {
-            color: var(--green);
-            font-weight: 700;
-        }
-
-        .state-off {
-            color: var(--red);
-            font-weight: 700;
-        }
-
-        .state-unknown {
-            color: var(--muted);
-        }
-
-        /* ================= SWITCHES ================= */
+        .state-on { color: var(--green); font-weight: 700; }
+        .state-off { color: var(--red); font-weight: 700; }
+        .state-unknown { color: var(--muted); }
 
         .led-switch {
             position: relative;
@@ -275,7 +198,6 @@
             border: 0;
             border-radius: 999px;
             cursor: pointer;
-            transition: background 0.2s;
         }
 
         .led-switch::before {
@@ -287,30 +209,17 @@
             height: 24px;
             background: white;
             border-radius: 50%;
-            box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
             transition: transform 0.2s;
         }
 
-        .led-switch:checked {
-            background: #16a34a;
-        }
+        .led-switch:checked { background: #16a34a; }
+        .led-switch:checked::before { transform: translateX(24px); }
+        .led-switch:disabled { opacity: 0.4; cursor: not-allowed; }
 
-        .led-switch:checked::before {
-            transform: translateX(24px);
-        }
-
-        .led-switch:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        .led-switch:focus-visible,
-        button:focus-visible {
+        .led-switch:focus-visible, button:focus-visible {
             outline: 2px solid var(--blue);
             outline-offset: 3px;
         }
-
-        /* ================= MESSAGES ================= */
 
         .message {
             margin-top: 18px;
@@ -332,230 +241,70 @@
             font-size: 12px;
         }
 
-        /* ================= TABLET ================= */
-
         @media (max-width: 800px) {
-            body {
-                padding: 18px;
-                padding-bottom: max(18px, env(safe-area-inset-bottom));
-            }
-
-            .sensor-grid,
-            .panel-grid {
-                gap: 14px;
-            }
-
-            .card {
-                padding: 16px;
-            }
-
-            .gauge {
-                height: 245px;
-            }
-
-            .chart {
-                height: 280px;
-            }
-
-            .card h2 {
-                font-size: 18px;
-            }
+            body { padding: 18px; }
+            .sensor-grid, .panel-grid { gap: 14px; }
+            .card { padding: 16px; }
+            .gauge { height: 245px; }
+            .chart { height: 280px; }
+            .card h2 { font-size: 18px; }
         }
 
-        /* ================= MOBILE ================= */
-
         @media (max-width: 600px) {
-            body {
-                padding: 12px;
-                padding-bottom: max(18px, env(safe-area-inset-bottom));
-            }
-
-            header {
-                align-items: flex-start;
-                gap: 12px;
-                margin-bottom: 18px;
-            }
-
-            h1 {
-                font-size: 25px;
-            }
-
-            .subtitle {
-                font-size: 13px;
-            }
+            body { padding: 12px; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+            header { align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+            h1 { font-size: 25px; }
+            .subtitle { font-size: 13px; }
 
             .badge {
                 width: 100%;
                 padding: 9px 12px;
                 border-radius: 12px;
-                font-size: 13px;
             }
 
-            /* Hai đồng hồ xếp dọc trên điện thoại */
-            .sensor-grid,
-            .panel-grid {
+            .sensor-grid, .panel-grid {
                 grid-template-columns: minmax(0, 1fr);
                 gap: 14px;
             }
 
-            .sensor-grid {
-                margin-bottom: 18px;
-            }
-
-            .card {
-                padding: 16px;
-                border-radius: 15px;
-            }
-
-            .card h2 {
-                margin-bottom: 10px;
-                font-size: 18px;
-            }
-
-            .section-title {
-                margin-top: 24px;
-                margin-bottom: 13px;
-                font-size: 20px;
-            }
-
-            .gauge {
-                height: 245px;
-            }
-
-            .chart {
-                height: 280px;
-            }
-
-            .note {
-                font-size: 13px;
-            }
+            .sensor-grid { margin-bottom: 18px; }
+            .card { padding: 16px; border-radius: 15px; }
+            .section-title { margin-top: 24px; margin-bottom: 13px; font-size: 20px; }
+            .gauge { height: 245px; }
+            .chart { height: 280px; }
 
             .button-row {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 10px;
-                margin: 13px 0 18px;
             }
 
-            .button-row button {
-                width: 100%;
-                min-width: 0;
-                min-height: 48px;
-                padding: 10px 8px;
-                font-size: 14px;
-            }
+            .button-row button { width: 100%; padding: 10px 8px; font-size: 14px; }
+            .device-row, .status-row { gap: 10px; padding: 14px 0; }
+            .device-name { font-size: 15px; }
+            .device-row small { font-size: 12px; }
+            .device-control { gap: 8px; }
+            .led-switch { width: 50px; height: 29px; }
+            .led-switch::before { width: 23px; height: 23px; }
+            .led-switch:checked::before { transform: translateX(21px); }
 
-            .device-row,
-            .status-row {
-                gap: 10px;
-                padding: 14px 0;
-            }
-
-            .device-name {
-                font-size: 15px;
-            }
-
-            .device-row small {
-                font-size: 12px;
-            }
-
-            .device-control {
-                gap: 8px;
-            }
-
-            .device-control .state-on,
-            .device-control .state-off,
-            .device-control .state-unknown {
-                font-size: 12px;
-                text-align: right;
-            }
-
-            .led-switch {
-                width: 50px;
-                height: 29px;
-            }
-
-            .led-switch::before {
-                width: 23px;
-                height: 23px;
-            }
-
-            .led-switch:checked::before {
-                transform: translateX(21px);
-            }
-
-            .status-row {
-                font-size: 13px;
-            }
-
-            .status-row > span:first-child {
-                flex: 0 0 42%;
-            }
-
-            .status-row > span:last-child {
-                min-width: 0;
-                text-align: right;
-                overflow-wrap: anywhere;
-            }
-
-            .message {
-                padding: 12px;
-                font-size: 13px;
-            }
-
-            footer {
-                font-size: 11px;
-                line-height: 1.6;
-            }
+            .status-row { font-size: 13px; }
+            .status-row > span:first-child { flex: 0 0 42%; }
+            .status-row > span:last-child { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+            .message { padding: 12px; font-size: 13px; }
+            footer { font-size: 11px; }
         }
-
-        /* ================= SMALL PHONES ================= */
 
         @media (max-width: 360px) {
-            body {
-                padding: 9px;
-            }
-
-            .card {
-                padding: 12px;
-            }
-
-            h1 {
-                font-size: 22px;
-            }
-
-            .gauge {
-                height: 220px;
-            }
-
-            .chart {
-                height: 250px;
-            }
-
-            .device-row {
-                gap: 6px;
-            }
-
-            .device-control {
-                gap: 6px;
-            }
-
-            .device-name {
-                font-size: 14px;
-            }
-
-            .status-row > span:first-child {
-                flex-basis: 39%;
-            }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            *,
-            *::before,
-            *::after {
-                scroll-behavior: auto !important;
-                transition-duration: 0.01ms !important;
-            }
+            body { padding: 9px; }
+            .card { padding: 12px; }
+            h1 { font-size: 22px; }
+            .gauge { height: 220px; }
+            .chart { height: 250px; }
+            .device-row { gap: 6px; }
+            .device-control { gap: 6px; }
+            .device-name { font-size: 14px; }
+            .status-row > span:first-child { flex-basis: 39%; }
         }
     </style>
 </head>
@@ -563,46 +312,51 @@
 <body>
 <div class="container">
 
-    <!-- HEADER -->
     <header>
         <div>
             <h1>🏠 Smart4 Dashboard</h1>
-            <div class="subtitle">
-                Giám sát và điều khiển nhà thông minh
-            </div>
+            <div class="subtitle">Giám sát và điều khiển nhà thông minh</div>
         </div>
-
         <div class="badge" id="connectionBadge" aria-live="polite">
             Đang kết nối backend
         </div>
     </header>
 
-    <!-- ĐỒNG HỒ CẢM BIẾN -->
-    <div class="sensor-grid">
+    <h2 class="section-title">📟 Đồng hồ cảm biến</h2>
 
+    <div class="sensor-grid">
         <section class="card">
             <h2>🔥 Khí gas</h2>
             <div id="gasGauge" class="gauge"></div>
-            <div id="gasNote" class="note" aria-live="polite">
-                Đang chờ dữ liệu...
-            </div>
+            <div id="gasNote" class="note">Đang chờ dữ liệu...</div>
         </section>
 
         <section class="card">
             <h2>💡 Ánh sáng</h2>
             <div id="lightGauge" class="gauge"></div>
-            <div id="lightNote" class="note" aria-live="polite">
-                Đang chờ dữ liệu...
+            <div id="lightNote" class="note">Đang chờ dữ liệu...</div>
+        </section>
+
+        <section class="card">
+            <h2>🌫️ Chỉ số phản ứng với khói</h2>
+            <div id="smokeGauge" class="gauge"></div>
+            <div id="smokeNote" class="note">
+                Chưa có phép đo khói riêng
             </div>
         </section>
 
+        <section class="card">
+            <h2>🍶 Chỉ số phản ứng với hơi cồn</h2>
+            <div id="alcoholGauge" class="gauge"></div>
+            <div id="alcoholNote" class="note">
+                Chưa có phép đo hơi cồn riêng
+            </div>
+        </section>
     </div>
 
-    <!-- BIỂU ĐỒ LỊCH SỬ -->
     <h2 class="section-title">📊 Biểu đồ lịch sử cảm biến</h2>
 
     <div class="sensor-grid">
-
         <section class="card">
             <h2>🔥 Lịch sử khí gas</h2>
             <div id="gasChart" class="chart"></div>
@@ -613,80 +367,54 @@
             <div id="lightChart" class="chart"></div>
         </section>
 
+        <section class="card">
+            <h2>🌫️ Lịch sử chỉ số khói</h2>
+            <div id="smokeChart" class="chart"></div>
+        </section>
+
+        <section class="card">
+            <h2>🍶 Lịch sử chỉ số hơi cồn</h2>
+            <div id="alcoholChart" class="chart"></div>
+        </section>
     </div>
 
-    <!-- ĐIỀU KHIỂN VÀ TRẠNG THÁI -->
     <h2 class="section-title">⚙️ Điều khiển và trạng thái hệ thống</h2>
 
     <div class="panel-grid">
-
-        <!-- ĐIỀU KHIỂN THIẾT BỊ -->
         <section class="card">
             <h2>🎛️ Điều khiển thiết bị</h2>
-
             <div>Chế độ hoạt động</div>
 
             <div class="button-row">
-                <button
-                    type="button"
-                    id="autoModeButton"
-                    class="auto-button"
-                    onclick="setAutoMode()">
+                <button type="button" id="autoModeButton" class="auto-button" onclick="setAutoMode()">
                     Tự động
                 </button>
-
-                <button
-                    type="button"
-                    id="manualModeButton"
-                    class="manual-button"
-                    onclick="setManualMode()">
+                <button type="button" id="manualModeButton" class="manual-button" onclick="setManualMode()">
                     Thủ công
                 </button>
             </div>
 
-            <!-- CÔNG TẮC ĐÈN -->
             <div class="device-row">
                 <div class="device-info">
                     <div class="device-name">💡 Đèn</div>
-                    <small id="ledDescription">
-                        Đang kiểm tra trạng thái...
-                    </small>
+                    <small id="ledDescription">Đang kiểm tra trạng thái...</small>
                 </div>
-
                 <div class="device-control">
-                    <span id="ledState" class="state-unknown">
-                        Không rõ
-                    </span>
-
-                    <input
-                        id="ledSwitch"
-                        class="led-switch"
-                        type="checkbox"
-                        aria-label="Bật hoặc tắt đèn"
-                        onchange="toggleLed()">
+                    <span id="ledState" class="state-unknown">Không rõ</span>
+                    <input id="ledSwitch" class="led-switch" type="checkbox"
+                           aria-label="Bật hoặc tắt đèn" onchange="toggleLed()">
                 </div>
             </div>
 
-            <!-- CÔNG TẮC CÒI -->
             <div class="device-row">
                 <div class="device-info">
                     <div class="device-name">🔔 Còi cảnh báo gas</div>
-                    <small id="buzzerDescription">
-                        Còi tự động theo ngưỡng gas
-                    </small>
+                    <small id="buzzerDescription">Còi tự động theo ngưỡng gas</small>
                 </div>
-
                 <div class="device-control">
-                    <span id="buzzerState" class="state-unknown">
-                        Không rõ
-                    </span>
-
-                    <input
-                        id="buzzerSwitch"
-                        class="led-switch"
-                        type="checkbox"
-                        aria-label="Bật hoặc tắt còi cảnh báo gas"
-                        onchange="toggleBuzzer()">
+                    <span id="buzzerState" class="state-unknown">Không rõ</span>
+                    <input id="buzzerSwitch" class="led-switch" type="checkbox"
+                           aria-label="Bật hoặc tắt còi cảnh báo gas" onchange="toggleBuzzer()">
                 </div>
             </div>
 
@@ -695,51 +423,36 @@
             </div>
         </section>
 
-        <!-- TRẠNG THÁI HỆ THỐNG -->
         <section class="card">
             <h2>📡 Trạng thái hệ thống</h2>
 
             <div class="status-row">
                 <span>Backend</span>
-                <span id="backendState" class="state-unknown">
-                    Đang kiểm tra
-                </span>
+                <span id="backendState" class="state-unknown">Đang kiểm tra</span>
             </div>
-
             <div class="status-row">
                 <span>MQTT</span>
-                <span id="mqttState" class="state-unknown">
-                    Đang kiểm tra
-                </span>
+                <span id="mqttState" class="state-unknown">Đang kiểm tra</span>
             </div>
-
             <div class="status-row">
                 <span>Thiết bị</span>
-                <span id="deviceState" class="state-unknown">
-                    Chưa nhận trạng thái
-                </span>
+                <span id="deviceState" class="state-unknown">Chưa nhận trạng thái</span>
             </div>
-
             <div class="status-row">
                 <span>Chế độ</span>
-                <span id="modeState" class="state-unknown">
-                    Không rõ
-                </span>
+                <span id="modeState" class="state-unknown">Không rõ</span>
             </div>
-
             <div class="status-row">
                 <span>Cập nhật gần nhất</span>
-                <span id="lastUpdate" class="state-unknown">
-                    --
-                </span>
+                <span id="lastUpdate" class="state-unknown">--</span>
             </div>
         </section>
-
     </div>
 
-    <footer>
-        Smart4 IoT Dashboard — ESP32-C5 · MQTT · Supabase
-    </footer>
+
+<footer>
+    Smart4 IoT Dashboard — ESP32-C5 · MQTT · Supabase
+</footer>
 
 </div>
 </body>
