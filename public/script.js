@@ -1,29 +1,41 @@
-
 "use strict";
 
 // ==================================================
 // SMART4 DASHBOARD
-// GAS - LIGHT - ALCOHOL - SMOKE
+// GAS - LIGHT - ALCOHOL - SMOKE - EMERGENCY
 // ==================================================
 
 const API_SENSOR = "/api/sensor";
 const API_HISTORY = "/api/history";
 const API_STATUS = "/api/status";
 const API_CONTROL = "/api/control";
+const API_EMERGENCY = "/api/emergency";
 
 const MAX_POINTS = 30;
 const SENSOR_INTERVAL = 3000;
 const STATUS_INTERVAL = 3000;
 const HISTORY_INTERVAL = 10000;
+const EMERGENCY_CONFIRM_TIMEOUT = 15000;
 
 let currentMode = "auto";
 let currentLed = false;
 let currentBuzzer = false;
+let currentEmergency = false;
+let currentMqttConnected = false;
+
 let controlBusy = false;
 let historyLoading = false;
 
+// Trạng thái cảnh báo đang chờ ESP32 xác nhận.
+let pendingEmergency = null;
+let pendingEmergencyAt = 0;
+
 const gauges = {};
 const charts = {};
+
+// ==================================================
+// CÁC HÀM TIỆN ÍCH
+// ==================================================
 
 function $(id) {
     return document.getElementById(id);
@@ -31,12 +43,18 @@ function $(id) {
 
 function setText(id, value) {
     const element = $(id);
-    if (element) element.textContent = value;
+
+    if (element) {
+        element.textContent = value;
+    }
 }
 
 function setClass(id, className) {
     const element = $(id);
-    if (element) element.className = className;
+
+    if (element) {
+        element.className = className;
+    }
 }
 
 function finiteNumber(value) {
@@ -45,11 +63,14 @@ function finiteNumber(value) {
     }
 
     const number = Number(value);
+
     return Number.isFinite(number) ? number : null;
 }
 
 function formatNumber(value, digits = 1) {
-    if (value === null || value === undefined) return "--";
+    if (value === null || value === undefined) {
+        return "--";
+    }
 
     return Number(value).toLocaleString("vi-VN", {
         maximumFractionDigits: digits
@@ -57,10 +78,15 @@ function formatNumber(value, digits = 1) {
 }
 
 function formatTime(value) {
-    if (!value) return "--";
+    if (!value) {
+        return "--";
+    }
 
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "--";
+
+    if (Number.isNaN(date.getTime())) {
+        return "--";
+    }
 
     return date.toLocaleTimeString("vi-VN", {
         hour: "2-digit",
@@ -80,6 +106,7 @@ async function getJSON(url, options = {}) {
     });
 
     const body = await response.text();
+
     let result;
 
     try {
@@ -100,10 +127,21 @@ async function getJSON(url, options = {}) {
 }
 
 function normalizeRows(result) {
-    if (Array.isArray(result)) return result;
-    if (Array.isArray(result?.data)) return result.data;
-    if (Array.isArray(result?.history)) return result.history;
-    if (Array.isArray(result?.rows)) return result.rows;
+    if (Array.isArray(result)) {
+        return result;
+    }
+
+    if (Array.isArray(result?.data)) {
+        return result.data;
+    }
+
+    if (Array.isArray(result?.history)) {
+        return result.history;
+    }
+
+    if (Array.isArray(result?.rows)) {
+        return result.rows;
+    }
 
     return [];
 }
@@ -213,7 +251,9 @@ function createGauge(elementId, title, unit, min, max) {
 }
 
 function updateGauge(chart, value, title, min, max) {
-    if (!chart || value === null) return;
+    if (!chart || value === null) {
+        return;
+    }
 
     const displayedValue = Math.max(min, Math.min(max, value));
 
@@ -268,7 +308,9 @@ function createLineChart(elementId, title, unit) {
             trigger: "axis",
 
             formatter(params) {
-                if (!params?.length) return "";
+                if (!params?.length) {
+                    return "";
+                }
 
                 const item = params[0];
                 const value = finiteNumber(item.value);
@@ -316,6 +358,7 @@ function createLineChart(elementId, title, unit) {
 
             axisLabel: {
                 color: "#94a3b8",
+
                 formatter(value) {
                     return Number(value).toLocaleString("vi-VN");
                 }
@@ -389,7 +432,10 @@ function initCharts() {
 function historyLabel(row, index) {
     if (row?.created_at) {
         const time = formatTime(row.created_at);
-        if (time !== "--") return time;
+
+        if (time !== "--") {
+            return time;
+        }
     }
 
     if (row?.id !== undefined && row?.id !== null) {
@@ -400,7 +446,9 @@ function historyLabel(row, index) {
 }
 
 function updateHistoryChart(chart, rows, field, title) {
-    if (!chart) return;
+    if (!chart) {
+        return;
+    }
 
     const validRows = rows
         .map((row, index) => ({
@@ -446,7 +494,9 @@ function updateHistoryChart(chart, rows, field, title) {
 }
 
 async function loadHistory() {
-    if (historyLoading) return;
+    if (historyLoading) {
+        return;
+    }
 
     historyLoading = true;
 
@@ -504,9 +554,14 @@ async function loadHistory() {
             "Chỉ số khói"
         );
 
-        console.log(`[HISTORY] Đã tải ${recentRows.length} bản ghi.`);
+        console.log(
+            `[HISTORY] Đã tải ${recentRows.length} bản ghi.`
+        );
     } catch (error) {
-        console.error("[HISTORY] Lỗi tải lịch sử:", error);
+        console.error(
+            "[HISTORY] Lỗi tải lịch sử:",
+            error
+        );
     } finally {
         historyLoading = false;
     }
@@ -530,10 +585,21 @@ async function loadSensor() {
         const alcohol = finiteNumber(sensor.alcohol_ppm);
         const smoke = finiteNumber(sensor.smoke_ugm3);
 
-        updateGauge(gauges.gas, gas, "Khí gas", 0, 100);
-        updateGauge(gauges.light, light, "Ánh sáng", 0, 20000);
-        updateGauge(gauges.alcohol, alcohol, "Hơi cồn", 0, 10000);
-        updateGauge(gauges.smoke, smoke, "Chỉ số khói", 0, 5000);
+        updateGauge(
+            gauges.gas, gas, "Khí gas", 0, 100
+        );
+
+        updateGauge(
+            gauges.light, light, "Ánh sáng", 0, 20000
+        );
+
+        updateGauge(
+            gauges.alcohol, alcohol, "Hơi cồn", 0, 10000
+        );
+
+        updateGauge(
+            gauges.smoke, smoke, "Chỉ số khói", 0, 5000
+        );
 
         setText(
             "gasNote",
@@ -549,8 +615,8 @@ async function loadSensor() {
             light === null
                 ? "Chưa có dữ liệu ánh sáng"
                 : light < 300
-                    ? `🌙 ${formatNumber(light)} lux — thiếu sáng`
-                    : `☀️ ${formatNumber(light)} lux — đủ sáng`
+                    ? `🌙 ${formatNumber(light)} — thiếu sáng`
+                    : `☀️ ${formatNumber(light)} — đủ sáng`
         );
 
         setText(
@@ -586,37 +652,188 @@ async function loadSensor() {
             smoke_ugm3: smoke
         });
     } catch (error) {
-        console.error("[SENSOR] Không tải được dữ liệu:", error);
+        console.error(
+            "[SENSOR] Không tải được dữ liệu:",
+            error
+        );
+
         setText("backendState", "Lỗi API");
         setClass("backendState", "state-off");
     }
 }
 
 // ==================================================
-// 4. TRẠNG THÁI THIẾT BỊ
+// 4. CẬP NHẬT GIAO DIỆN CẢNH BÁO
+// ==================================================
+
+function updateEmergencyUI() {
+    const emergencySwitch = $("emergencySwitch");
+
+    if (emergencySwitch) {
+        emergencySwitch.checked = currentEmergency;
+
+        emergencySwitch.disabled =
+            controlBusy || !currentMqttConnected;
+    }
+
+    if (pendingEmergency !== null) {
+        setText(
+            "emergencyState",
+            pendingEmergency
+                ? "⏳ Đang chờ xác nhận bật cảnh báo"
+                : "⏳ Đang chờ xác nhận tắt cảnh báo"
+        );
+
+        setClass("emergencyState", "state-unknown");
+
+        setText(
+            "emergencyDescription",
+            "Đã ghi nhận yêu cầu của bạn. Hệ thống đang chờ phản hồi từ ESP32."
+        );
+
+        // Không ghi đè thông báo chờ xác nhận.
+        // Chỉ thông báo trạng thái, không khẳng định còi/LED đã hoạt động.
+        return;
+    }
+
+    if (!currentMqttConnected) {
+        setText(
+            "emergencyState",
+            currentEmergency
+                ? "⚠️ Yêu cầu cảnh báo đang bật"
+                : "Không có kết nối MQTT"
+        );
+
+        setClass("emergencyState", "state-unknown");
+
+        setText(
+            "emergencyDescription",
+            "Không thể gửi lệnh khi MQTT mất kết nối."
+        );
+
+        setText(
+            "emergencyMessage",
+            "⚠️ Mất kết nối MQTT. Hãy kiểm tra backend và broker EMQX."
+        );
+
+        return;
+    }
+
+    if (currentEmergency) {
+        setText(
+            "emergencyState",
+            "🚨 CẢNH BÁO ĐANG BẬT"
+        );
+
+        setClass("emergencyState", "state-off");
+
+        setText(
+            "emergencyDescription",
+            "Trạng thái cảnh báo được báo về từ backend/thiết bị."
+        );
+
+        setText(
+            "emergencyMessage",
+            "Hãy kiểm tra LED và buzzer thực tế. Trạng thái trên website không tự chứng minh thiết bị cảnh báo đã hoạt động."
+        );
+    } else {
+        setText(
+            "emergencyState",
+            "Đang tắt cảnh báo"
+        );
+
+        setClass("emergencyState", "state-on");
+
+        setText(
+            "emergencyDescription",
+            "Công tắc gửi lệnh bật/tắt cảnh báo qua MQTT."
+        );
+
+        setText(
+            "emergencyMessage",
+            "MQTT đã kết nối. Có thể gửi lệnh cảnh báo đến backend."
+        );
+    }
+}
+
+// ==================================================
+// 5. TRẠNG THÁI THIẾT BỊ
 // ==================================================
 
 function updateDeviceStatus(result) {
     const device = result.device || {};
 
-    currentMode = device.mode === "manual" ? "manual" : "auto";
+    currentMode =
+        device.mode === "manual" ? "manual" : "auto";
+
     currentLed = device.led === true;
     currentBuzzer = device.buzzer === true;
+    currentMqttConnected = result.mqttConnected === true;
 
-    const mqttConnected = result.mqttConnected === true;
     const hasDeviceStatus = Boolean(device.updatedAt);
 
-    setText("mqttState", mqttConnected ? "Đã kết nối" : "Mất kết nối");
-    setClass("mqttState", mqttConnected ? "state-on" : "state-off");
+    // Chỉ cập nhật emergency khi không có lệnh đang chờ.
+    // Điều này ngăn status polling ghi đè công tắc vừa bật.
+    if (pendingEmergency !== null) {
+        const elapsed = Date.now() - pendingEmergencyAt;
+
+        if (
+            typeof device.emergency === "boolean" &&
+            device.emergency === pendingEmergency
+        ) {
+            // Nhận được trạng thái khớp với yêu cầu.
+            currentEmergency = pendingEmergency;
+            pendingEmergency = null;
+            pendingEmergencyAt = 0;
+
+            setText(
+                "emergencyMessage",
+                "Đã nhận trạng thái khớp với yêu cầu từ backend."
+            );
+        } else if (elapsed >= EMERGENCY_CONFIRM_TIMEOUT) {
+            // Không được khẳng định thiết bị đã thực hiện lệnh.
+            pendingEmergency = null;
+            pendingEmergencyAt = 0;
+
+            // Đồng bộ lại trạng thái cuối cùng backend đang báo.
+            if (typeof device.emergency === "boolean") {
+                currentEmergency = device.emergency;
+            }
+
+            setText(
+                "emergencyMessage",
+                "⚠️ Chưa nhận được xác nhận từ ESP32. Kiểm tra firmware và topic MQTT."
+            );
+        } else {
+            // Giữ trạng thái yêu cầu trong thời gian chờ.
+            currentEmergency = pendingEmergency;
+        }
+    } else if (typeof device.emergency === "boolean") {
+        currentEmergency = device.emergency;
+    }
+
+    setText(
+        "mqttState",
+        currentMqttConnected ? "Đã kết nối" : "Mất kết nối"
+    );
+
+    setClass(
+        "mqttState",
+        currentMqttConnected ? "state-on" : "state-off"
+    );
 
     setText(
         "connectionBadge",
-        mqttConnected ? "● MQTT đã kết nối" : "● MQTT mất kết nối"
+        currentMqttConnected
+            ? "● MQTT đã kết nối"
+            : "● MQTT mất kết nối"
     );
 
     setText(
         "deviceState",
-        hasDeviceStatus ? "Đã nhận trạng thái" : "Chưa nhận trạng thái"
+        hasDeviceStatus
+            ? "Đã nhận trạng thái"
+            : "Chưa nhận trạng thái"
     );
 
     setClass(
@@ -624,17 +841,35 @@ function updateDeviceStatus(result) {
         hasDeviceStatus ? "state-on" : "state-unknown"
     );
 
-    setText("modeState", currentMode === "auto" ? "Tự động" : "Thủ công");
+    setText(
+        "modeState",
+        currentMode === "auto" ? "Tự động" : "Thủ công"
+    );
+
     setClass(
         "modeState",
         currentMode === "auto" ? "state-on" : "state-unknown"
     );
 
-    setText("ledState", currentLed ? "Đang bật" : "Đang tắt");
-    setClass("ledState", currentLed ? "state-on" : "state-off");
+    setText(
+        "ledState",
+        currentLed ? "Đang bật" : "Đang tắt"
+    );
 
-    setText("buzzerState", currentBuzzer ? "Đang bật" : "Đang tắt");
-    setClass("buzzerState", currentBuzzer ? "state-on" : "state-off");
+    setClass(
+        "ledState",
+        currentLed ? "state-on" : "state-off"
+    );
+
+    setText(
+        "buzzerState",
+        currentBuzzer ? "Đang bật" : "Đang tắt"
+    );
+
+    setClass(
+        "buzzerState",
+        currentBuzzer ? "state-on" : "state-off"
+    );
 
     const autoButton = $("autoModeButton");
     const manualButton = $("manualModeButton");
@@ -642,25 +877,41 @@ function updateDeviceStatus(result) {
     const buzzerSwitch = $("buzzerSwitch");
 
     if (autoButton) {
-        autoButton.classList.toggle("active", currentMode === "auto");
-        autoButton.disabled = controlBusy || !mqttConnected;
+        autoButton.classList.toggle(
+            "active",
+            currentMode === "auto"
+        );
+
+        autoButton.disabled =
+            controlBusy || !currentMqttConnected;
     }
 
     if (manualButton) {
-        manualButton.classList.toggle("active", currentMode === "manual");
-        manualButton.disabled = controlBusy || !mqttConnected;
+        manualButton.classList.toggle(
+            "active",
+            currentMode === "manual"
+        );
+
+        manualButton.disabled =
+            controlBusy || !currentMqttConnected;
     }
 
     if (ledSwitch) {
         ledSwitch.checked = currentLed;
+
         ledSwitch.disabled =
-            controlBusy || !mqttConnected || currentMode !== "manual";
+            controlBusy ||
+            !currentMqttConnected ||
+            currentMode !== "manual";
     }
 
     if (buzzerSwitch) {
         buzzerSwitch.checked = currentBuzzer;
+
         buzzerSwitch.disabled =
-            controlBusy || !mqttConnected || currentMode !== "manual";
+            controlBusy ||
+            !currentMqttConnected ||
+            currentMode !== "manual";
     }
 
     setText(
@@ -677,22 +928,45 @@ function updateDeviceStatus(result) {
             : "Bạn có thể bật/tắt còi bằng công tắc"
     );
 
-    setText(
-        "controlMessage",
-        currentMode === "auto"
-            ? "Chế độ tự động: đèn bật khi ánh sáng dưới 300 lux; còi bật khi gas vượt 35%."
-            : "Chế độ thủ công: bạn điều khiển đèn và còi bằng công tắc."
-    );
+    if (pendingEmergency !== null) {
+        setText(
+            "controlMessage",
+            "Đang chờ xác nhận trạng thái cảnh báo."
+        );
+    } else {
+        setText(
+            "controlMessage",
+            currentMode === "auto"
+                ? "Chế độ tự động: đèn và còi hoạt động theo ngưỡng cảm biến."
+                : "Chế độ thủ công: bạn điều khiển đèn và còi bằng công tắc."
+        );
+    }
+
+    updateEmergencyUI();
 }
+
+// ==================================================
+// 6. TẢI TRẠNG THÁI BACKEND
+// ==================================================
 
 async function loadStatus() {
     try {
         const result = await getJSON(API_STATUS);
+
         updateDeviceStatus(result);
     } catch (error) {
-        console.error("[STATUS] Không tải được trạng thái:", error);
+        console.error(
+            "[STATUS] Không tải được trạng thái:",
+            error
+        );
 
-        setText("connectionBadge", "Không kết nối được backend");
+        currentMqttConnected = false;
+
+        setText(
+            "connectionBadge",
+            "Không kết nối được backend"
+        );
+
         setText("backendState", "Lỗi kết nối");
         setClass("backendState", "state-off");
 
@@ -706,32 +980,48 @@ async function loadStatus() {
             "autoModeButton",
             "manualModeButton",
             "ledSwitch",
-            "buzzerSwitch"
+            "buzzerSwitch",
+            "emergencySwitch"
         ]) {
             const element = $(id);
-            if (element) element.disabled = true;
+
+            if (element) {
+                element.disabled = true;
+            }
         }
+
+        updateEmergencyUI();
     }
 }
 
 // ==================================================
-// 5. ĐIỀU KHIỂN THIẾT BỊ
+// 7. ĐIỀU KHIỂN AUTO / MANUAL / LED / BUZZER
 // ==================================================
 
 async function sendControl(command) {
-    if (controlBusy) return;
+    if (controlBusy) {
+        return;
+    }
 
     controlBusy = true;
-    setText("controlMessage", "Đang gửi lệnh đến ESP32...");
+
+    setText(
+        "controlMessage",
+        "Đang gửi lệnh đến backend..."
+    );
 
     for (const id of [
         "autoModeButton",
         "manualModeButton",
         "ledSwitch",
-        "buzzerSwitch"
+        "buzzerSwitch",
+        "emergencySwitch"
     ]) {
         const element = $(id);
-        if (element) element.disabled = true;
+
+        if (element) {
+            element.disabled = true;
+        }
     }
 
     try {
@@ -750,7 +1040,101 @@ async function sendControl(command) {
         await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
         console.error("[CONTROL] Gửi lệnh thất bại:", error);
-        setText("controlMessage", `Không gửi được lệnh: ${error.message}`);
+
+        setText(
+            "controlMessage",
+            `Không gửi được lệnh: ${error.message}`
+        );
+    } finally {
+        controlBusy = false;
+        await loadStatus();
+    }
+}
+
+// ==================================================
+// 8. CẢNH BÁO SIÊU NGUY HIỂM
+// ==================================================
+
+async function toggleEmergency() {
+    const emergencySwitch = $("emergencySwitch");
+
+    if (!emergencySwitch || controlBusy) {
+        return;
+    }
+
+    const requestedState = emergencySwitch.checked;
+
+    if (!currentMqttConnected) {
+        emergencySwitch.checked = currentEmergency;
+
+        setText(
+            "emergencyMessage",
+            "⚠️ MQTT mất kết nối. Không thể gửi lệnh."
+        );
+
+        return;
+    }
+
+    // Đặt trạng thái đang chờ trước khi gửi lệnh.
+    // Polling trạng thái không được phép tắt công tắc ngay lập tức.
+    pendingEmergency = requestedState;
+    pendingEmergencyAt = Date.now();
+    currentEmergency = requestedState;
+
+    controlBusy = true;
+
+    emergencySwitch.checked = requestedState;
+    emergencySwitch.disabled = true;
+
+    setText(
+        "emergencyState",
+        requestedState
+            ? "⏳ Đang chờ xác nhận bật cảnh báo"
+            : "⏳ Đang chờ xác nhận tắt cảnh báo"
+    );
+
+    setClass("emergencyState", "state-unknown");
+
+    setText(
+        "emergencyDescription",
+        "Đang gửi yêu cầu qua MQTT và chờ phản hồi."
+    );
+
+    setText(
+        "emergencyMessage",
+        requestedState
+            ? "Đang gửi yêu cầu bật cảnh báo..."
+            : "Đang gửi yêu cầu tắt cảnh báo..."
+    );
+
+    try {
+        const result = await getJSON(API_EMERGENCY, {
+            method: "POST",
+            body: JSON.stringify({
+                enabled: requestedState
+            })
+        });
+
+        console.log("[EMERGENCY] Backend phản hồi:", result);
+
+        setText(
+            "emergencyMessage",
+            result.message
+                ? `${result.message}. Đang chờ ESP32 xác nhận.`
+                : "Đã gửi lệnh. Đang chờ ESP32 xác nhận."
+        );
+    } catch (error) {
+        console.error("[EMERGENCY] Lỗi:", error);
+
+        pendingEmergency = null;
+        pendingEmergencyAt = 0;
+
+        setText(
+            "emergencyMessage",
+            `❌ Gửi lệnh thất bại: ${error.message}`
+        );
+
+        await loadStatus();
     } finally {
         controlBusy = false;
         await loadStatus();
@@ -758,7 +1142,9 @@ async function sendControl(command) {
 }
 
 function setAutoMode() {
-    sendControl({ mode: "auto" });
+    sendControl({
+        mode: "auto"
+    });
 }
 
 function setManualMode() {
@@ -772,7 +1158,13 @@ function setManualMode() {
 function toggleLed() {
     const ledSwitch = $("ledSwitch");
 
-    if (!ledSwitch || currentMode !== "manual" || controlBusy) return;
+    if (
+        !ledSwitch ||
+        currentMode !== "manual" ||
+        controlBusy
+    ) {
+        return;
+    }
 
     sendControl({
         mode: "manual",
@@ -784,7 +1176,13 @@ function toggleLed() {
 function toggleBuzzer() {
     const buzzerSwitch = $("buzzerSwitch");
 
-    if (!buzzerSwitch || currentMode !== "manual" || controlBusy) return;
+    if (
+        !buzzerSwitch ||
+        currentMode !== "manual" ||
+        controlBusy
+    ) {
+        return;
+    }
 
     sendControl({
         mode: "manual",
@@ -793,20 +1191,28 @@ function toggleBuzzer() {
     });
 }
 
+// Công khai các hàm để HTML gọi được.
 window.setAutoMode = setAutoMode;
 window.setManualMode = setManualMode;
 window.toggleLed = toggleLed;
 window.toggleBuzzer = toggleBuzzer;
+window.toggleEmergency = toggleEmergency;
 
 // ==================================================
-// 6. KHỞI ĐỘNG DASHBOARD
+// 9. KHỞI ĐỘNG DASHBOARD
 // ==================================================
 
 document.addEventListener("DOMContentLoaded", async function () {
     if (typeof echarts === "undefined") {
-        setText("connectionBadge", "Không tải được thư viện biểu đồ");
+        setText(
+            "connectionBadge",
+            "Không tải được thư viện biểu đồ"
+        );
+
         setText("backendState", "Chưa khởi tạo");
+
         console.error("ECharts chưa tải được.");
+
         return;
     }
 
@@ -826,20 +1232,31 @@ document.addEventListener("DOMContentLoaded", async function () {
     console.log("Smart4 Dashboard đã khởi động.");
 });
 
+// ==================================================
+// 10. THAY ĐỔI KÍCH THƯỚC BIỂU ĐỒ
+// ==================================================
+
 function resizeAllCharts() {
     Object.values(gauges).forEach(chart => {
-        if (chart) chart.resize();
+        if (chart) {
+            chart.resize();
+        }
     });
 
     Object.values(charts).forEach(chart => {
-        if (chart) chart.resize();
+        if (chart) {
+            chart.resize();
+        }
     });
 }
 
 document.addEventListener("visibilitychange", function () {
-    if (document.hidden) return;
+    if (document.hidden) {
+        return;
+    }
 
     resizeAllCharts();
+
     loadSensor();
     loadStatus();
     loadHistory();

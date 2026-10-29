@@ -1,131 +1,481 @@
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
-#include <DHT.h>
 #include <math.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 // =====================================================
-// 1. WIFI
+// CHAN ESP32-C5
 // =====================================================
 
-// Dùng cho Wokwi.
-// Nếu dùng Wi-Fi thật, thay bằng tên và mật khẩu Wi-Fi.
-const char* WIFI_SSID = "Wokwi-GUEST";
-const char* WIFI_PASSWORD = "";
+#define GAS_PIN       1
+#define LDR_PIN       2
+#define BUZZER_PIN    3
+#define LED_PIN       4
 
 // =====================================================
-// 2. MQTT - EMQX CLOUD
+// NGUONG CANH BAO
 // =====================================================
 
-const char* MQTT_HOST = "g10a898d.ala.us-east-1.emqxsl.com";
-const int MQTT_PORT = 8883;
+// Gas > 35% -> Buzzer ON
+#define GAS_PERCENT_ALARM 35.0
 
-// Điền thông tin MQTT MỚI sau khi đổi mật khẩu.
-// Không dùng mật khẩu đã bị lộ trước đó.
-const char* MQTT_USERNAME = "YOUR_NEW_MQTT_USERNAME";
-const char* MQTT_PASSWORD = "YOUR_NEW_MQTT_PASSWORD";
-
-const char* TOPIC_SENSOR = "nhansida/iot/sensor";
-const char* TOPIC_CONTROL = "nhansida/iot/control";
-const char* TOPIC_STATUS = "nhansida/iot/status";
+// Lux < 300 -> LED ON
+#define NGUONG_ANH_SANG 300.0
 
 // =====================================================
-// 3. KHAI BÁO CHÂN
+// HIEU CHUAN GAS
 // =====================================================
 
-// Các chân này được giữ từ code cũ.
-// PHẢI kiểm tra và sửa theo sơ đồ chân ESP32-C5 thực tế.
-#define GAS_PIN 34
-#define LDR_PIN 35
-#define LED_PIN 4
-#define BUZZER_PIN 2
-#define DHT_PIN 5
-
-#define DHT_TYPE DHT22
+#define GAS_ADC_MIN  843.0
+#define GAS_ADC_9000 3487.0
 
 // =====================================================
-// 4. NGƯỠNG ĐIỀU KHIỂN
+// WIFI
 // =====================================================
 
-// Gas vượt 35%: bật còi ở chế độ tự động.
-const float GAS_THRESHOLD = 35.0;
-
-// Ánh sáng dưới 300 lux: bật đèn ở chế độ tự động.
-const float LIGHT_THRESHOLD = 300.0;
+const char* ssid = "Bao2o05";
+const char* password = "99999999";
 
 // =====================================================
-// 5. ĐỐI TƯỢNG
+// MQTT
 // =====================================================
 
-WiFiClientSecure secureClient;
-PubSubClient mqttClient(secureClient);
-DHT dht(DHT_PIN, DHT_TYPE);
+const char* mqtt_server = "g10a898d.ala.us-east-1.emqxsl.com";
+const int mqtt_port = 8883;
+
+const char* mqtt_username = "BAOSmart4";
+const char* mqtt_password = "Phamminhbao710";
 
 // =====================================================
-// 6. BIẾN TRẠNG THÁI
+// MQTT TOPIC
 // =====================================================
 
-bool autoMode = true;
-bool manualLed = false;
-bool manualBuzzer = false;
+const char* topic_sensor =
+    "nhansida/iot/sensor";
 
-bool currentLed = false;
-bool currentBuzzer = false;
+const char* topic_control =
+    "nhansida/iot/control";
 
-unsigned long lastSensorPublish = 0;
+const char* topic_status =
+    "nhansida/iot/status";
+
+// =====================================================
+// MQTT CLIENT
+// =====================================================
+
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
+
+// =====================================================
+// BIEN HE THONG
+// =====================================================
+
+unsigned long lastPublish = 0;
 unsigned long lastStatusPublish = 0;
 unsigned long lastWifiAttempt = 0;
 
-const unsigned long SENSOR_INTERVAL = 2000;
+const unsigned long PUBLISH_INTERVAL = 1000;
 const unsigned long STATUS_INTERVAL = 2000;
+const unsigned long WIFI_RETRY_INTERVAL = 5000;
+
+String currentMode = "auto";
+
+bool ledState = false;
+bool buzzerState = false;
+
+// Trang thai canh bao khan cap
+bool emergencyState = false;
+
+// Trang thai ket noi
+bool hasReceivedControl = false;
 
 // =====================================================
-// 7. ĐỌC CẢM BIẾN
+// DOC BOOLEAN TRONG JSON
+// Tra ve true neu tim thay truong hop le
 // =====================================================
 
-// Đây là phép quy đổi tương đối theo ADC.
-// Cần hiệu chuẩn theo cảm biến thực tế; không phải phép
-// đo nồng độ gas ppm chính xác nếu chưa hiệu chuẩn.
-float readGasPercent() {
-    int raw = analogRead(GAS_PIN);
+bool readJsonBool(
+    const char* json,
+    const char* key,
+    bool* value
+) {
+    char searchKey[40];
 
-    float percent = (raw / 4095.0f) * 100.0f;
+    snprintf(
+        searchKey,
+        sizeof(searchKey),
+        "\"%s\"",
+        key
+    );
 
-    if (percent < 0) percent = 0;
-    if (percent > 100) percent = 100;
+    const char* pos = strstr(json, searchKey);
 
-    return percent;
+    if (pos == nullptr) {
+        return false;
+    }
+
+    pos = strchr(pos, ':');
+
+    if (pos == nullptr) {
+        return false;
+    }
+
+    pos++;
+
+    while (
+        *pos == ' ' ||
+        *pos == '\t' ||
+        *pos == '\n' ||
+        *pos == '\r'
+    ) {
+        pos++;
+    }
+
+    if (strncmp(pos, "true", 4) == 0) {
+        *value = true;
+        return true;
+    }
+
+    if (strncmp(pos, "false", 5) == 0) {
+        *value = false;
+        return true;
+    }
+
+    return false;
 }
 
-// Đọc ADC của cảm biến ánh sáng.
-// Muốn đổi sang lux chính xác cần hiệu chuẩn LDR và mạch chia áp.
-float readLightValue() {
-    int raw = analogRead(LDR_PIN);
+// =====================================================
+// DOC CHUOI MODE TRONG JSON
+// =====================================================
 
-    // Giá trị ADC quy đổi tạm sang thang hiển thị 0-4095.
-    // Đây KHÔNG phải lux thực.
-    return (float)raw;
+bool readJsonString(
+    const char* json,
+    const char* key,
+    char* output,
+    size_t outputSize
+) {
+    if (
+        json == nullptr ||
+        key == nullptr ||
+        output == nullptr ||
+        outputSize == 0
+    ) {
+        return false;
+    }
+
+    char searchKey[40];
+
+    snprintf(
+        searchKey,
+        sizeof(searchKey),
+        "\"%s\"",
+        key
+    );
+
+    const char* pos = strstr(json, searchKey);
+
+    if (pos == nullptr) {
+        return false;
+    }
+
+    pos = strchr(pos, ':');
+
+    if (pos == nullptr) {
+        return false;
+    }
+
+    pos++;
+
+    while (
+        *pos == ' ' ||
+        *pos == '\t' ||
+        *pos == '\n' ||
+        *pos == '\r'
+    ) {
+        pos++;
+    }
+
+    if (*pos != '"') {
+        return false;
+    }
+
+    pos++;
+
+    const char* endQuote = strchr(pos, '"');
+
+    if (endQuote == nullptr) {
+        return false;
+    }
+
+    size_t length = endQuote - pos;
+
+    if (length >= outputSize) {
+        return false;
+    }
+
+    memcpy(output, pos, length);
+    output[length] = '\0';
+
+    return true;
 }
 
 // =====================================================
-// 8. WIFI
+// CAP NHAT GPIO
 // =====================================================
 
-void connectWiFi() {
-    if (WiFi.status() == WL_CONNECTED) {
+void applyOutputs() {
+    // Khi canh bao khan cap bat:
+    // LED va buzzer deu duoc yeu cau bat.
+    if (emergencyState) {
+        digitalWrite(LED_PIN, HIGH);
+        digitalWrite(BUZZER_PIN, HIGH);
         return;
     }
 
-    Serial.println("Dang ket noi Wi-Fi...");
+    digitalWrite(
+        LED_PIN,
+        ledState ? HIGH : LOW
+    );
+
+    digitalWrite(
+        BUZZER_PIN,
+        buzzerState ? HIGH : LOW
+    );
+}
+
+// =====================================================
+// GUI TRANG THAI THIET BI LEN BACKEND
+// =====================================================
+
+void publishDeviceStatus() {
+    if (!client.connected()) {
+        return;
+    }
+
+    char statusJson[200];
+
+    snprintf(
+        statusJson,
+        sizeof(statusJson),
+        "{\"mode\":\"%s\",\"led\":%s,\"buzzer\":%s,\"emergency\":%s}",
+        currentMode.c_str(),
+        ledState ? "true" : "false",
+        buzzerState ? "true" : "false",
+        emergencyState ? "true" : "false"
+    );
+
+    bool ok = client.publish(
+        topic_status,
+        statusJson,
+        true
+    );
+
+    Serial.print("Trang thai thiet bi: ");
+    Serial.println(statusJson);
+
+    if (!ok) {
+        Serial.println(
+            "Gui trang thai MQTT that bai"
+        );
+    } else {
+        lastStatusPublish = millis();
+    }
+}
+
+// =====================================================
+// XU LY LENH MQTT
+// =====================================================
+
+void mqttCallback(
+    char* topic,
+    byte* payload,
+    unsigned int length
+) {
+    if (strcmp(topic, topic_control) != 0) {
+        return;
+    }
+
+    char message[256];
+
+    if (length >= sizeof(message)) {
+        Serial.println(
+            "Lenh MQTT qua dai, bo qua"
+        );
+        return;
+    }
+
+    memcpy(message, payload, length);
+    message[length] = '\0';
+
+    Serial.println();
+    Serial.println("================================");
+    Serial.println("NHAN LENH TU DASHBOARD");
+    Serial.print("Topic: ");
+    Serial.println(topic);
+    Serial.print("Payload: ");
+    Serial.println(message);
+
+    // -------------------------------------------------
+    // 1. KIEM TRA LENH CANH BAO KHAN CAP
+    // -------------------------------------------------
+
+    bool requestedEmergency;
+
+    if (
+        readJsonBool(
+            message,
+            "emergency",
+            &requestedEmergency
+        )
+    ) {
+        emergencyState = requestedEmergency;
+        hasReceivedControl = true;
+
+        Serial.print("CANH BAO KHAN CAP: ");
+
+        Serial.println(
+            emergencyState ? "BAT" : "TAT"
+        );
+
+        // Cap nhat GPIO ngay lap tuc.
+        applyOutputs();
+
+        // Gui lai trang thai de dashboard cap nhat.
+        publishDeviceStatus();
+
+        Serial.println("================================");
+        return;
+    }
+
+    // -------------------------------------------------
+    // 2. DOC CHE DO AUTO / MANUAL
+    // -------------------------------------------------
+
+    char modeValue[20] = {0};
+
+    if (
+        !readJsonString(
+            message,
+            "mode",
+            modeValue,
+            sizeof(modeValue)
+        )
+    ) {
+        Serial.println(
+            "Lenh khong co mode hoac emergency hop le"
+        );
+
+        Serial.println("================================");
+        return;
+    }
+
+    // -------------------------------------------------
+    // 3. CHE DO AUTO
+    // -------------------------------------------------
+
+    if (strcmp(modeValue, "auto") == 0) {
+        currentMode = "auto";
+        hasReceivedControl = true;
+
+        Serial.println(
+            "Da chuyen sang CHE DO TU DONG"
+        );
+
+        // Khong tu tat emergency.
+        // Trang thai khan cap chi thay doi
+        // khi nhan lenh emergency true/false.
+        applyOutputs();
+        publishDeviceStatus();
+
+        Serial.println("================================");
+        return;
+    }
+
+    // -------------------------------------------------
+    // 4. CHE DO MANUAL
+    // -------------------------------------------------
+
+    if (strcmp(modeValue, "manual") == 0) {
+        bool requestedLed = false;
+        bool requestedBuzzer = false;
+
+        bool ledValid = readJsonBool(
+            message,
+            "led",
+            &requestedLed
+        );
+
+        bool buzzerValid = readJsonBool(
+            message,
+            "buzzer",
+            &requestedBuzzer
+        );
+
+        if (!ledValid || !buzzerValid) {
+            Serial.println(
+                "Lenh manual can led va buzzer true/false"
+            );
+
+            Serial.println("================================");
+            return;
+        }
+
+        currentMode = "manual";
+
+        ledState = requestedLed;
+        buzzerState = requestedBuzzer;
+
+        hasReceivedControl = true;
+
+        applyOutputs();
+
+        Serial.println(
+            "Da chuyen sang CHE DO THU CONG"
+        );
+
+        Serial.print("LED: ");
+        Serial.println(ledState ? "ON" : "OFF");
+
+        Serial.print("BUZZER: ");
+        Serial.println(
+            buzzerState ? "ON" : "OFF"
+        );
+
+        publishDeviceStatus();
+
+        Serial.println("================================");
+        return;
+    }
+
+    Serial.println("Mode khong hop le");
+    Serial.println("================================");
+}
+
+// =====================================================
+// KET NOI WIFI
+// =====================================================
+
+void setup_wifi() {
+    Serial.println();
+    Serial.println("================================");
+    Serial.println("ESP32-C5 KET NOI WIFI");
+    Serial.println("================================");
 
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.setSleep(false);
+    WiFi.begin(ssid, password);
 
-    unsigned long start = millis();
+    unsigned long startTime = millis();
 
-    while (WiFi.status() != WL_CONNECTED &&
-           millis() - start < 15000) {
+    while (
+        WiFi.status() != WL_CONNECTED &&
+        millis() - startTime < 20000
+    ) {
         delay(500);
         Serial.print(".");
     }
@@ -133,302 +483,392 @@ void connectWiFi() {
     Serial.println();
 
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("WIFI: KET NOI THANH CONG");
-        Serial.print("IP: ");
+        Serial.println("WIFI DA KET NOI!");
+
+        Serial.print("Dia chi IP: ");
         Serial.println(WiFi.localIP());
+
+        Serial.print("RSSI: ");
+        Serial.println(WiFi.RSSI());
     } else {
-        Serial.println("WIFI: CHUA KET NOI");
+        Serial.println(
+            "WIFI CHUA KET NOI - SE THU LAI"
+        );
     }
 }
 
 // =====================================================
-// 9. GỬI TRẠNG THÁI THIẾT BỊ
+// KET NOI MQTT
 // =====================================================
 
-void publishStatus() {
-    if (!mqttClient.connected()) {
-        return;
-    }
-
-    char payload[160];
-
-    snprintf(
-        payload,
-        sizeof(payload),
-        "{\"mode\":\"%s\",\"led\":%s,\"buzzer\":%s}",
-        autoMode ? "auto" : "manual",
-        currentLed ? "true" : "false",
-        currentBuzzer ? "true" : "false"
-    );
-
-    bool ok = mqttClient.publish(TOPIC_STATUS, payload);
-
-    if (ok) {
-        Serial.print("STATUS SENT: ");
-        Serial.println(payload);
-    }
-}
-
-// =====================================================
-// 10. ÁP DỤNG ĐIỀU KHIỂN
-// =====================================================
-
-void applyOutputs() {
-    if (autoMode) {
-        float gas = readGasPercent();
-        float light = readLightValue();
-
-        // Tạm thời dùng giá trị ADC của LDR.
-        // Chỉ đặt LIGHT_THRESHOLD = 300 nếu giá trị đọc
-        // đã được hiệu chuẩn thành lux.
-        currentLed = (light < LIGHT_THRESHOLD);
-        currentBuzzer = (gas > GAS_THRESHOLD);
-    } else {
-        currentLed = manualLed;
-        currentBuzzer = manualBuzzer;
-    }
-
-    digitalWrite(LED_PIN, currentLed ? HIGH : LOW);
-    digitalWrite(BUZZER_PIN, currentBuzzer ? HIGH : LOW);
-}
-
-// =====================================================
-// 11. NHẬN LỆNH TỪ WEBSITE QUA MQTT
-// =====================================================
-
-bool jsonBoolValue(const String& payload, const char* key, bool& value) {
-    String searchKey = String("\"") + key + "\"";
-    int keyPos = payload.indexOf(searchKey);
-
-    if (keyPos < 0) {
-        return false;
-    }
-
-    int colonPos = payload.indexOf(':', keyPos);
-
-    if (colonPos < 0) {
-        return false;
-    }
-
-    int truePos = payload.indexOf("true", colonPos);
-    int falsePos = payload.indexOf("false", colonPos);
-
-    if (truePos >= 0 && (falsePos < 0 || truePos < falsePos)) {
-        value = true;
-        return true;
-    }
-
-    if (falsePos >= 0) {
-        value = false;
-        return true;
-    }
-
-    return false;
-}
-
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-    String topicName = String(topic);
-
-    String message;
-    message.reserve(length + 1);
-
-    for (unsigned int i = 0; i < length; i++) {
-        message += (char)payload[i];
-    }
-
-    Serial.print("MQTT RX [");
-    Serial.print(topicName);
-    Serial.print("]: ");
-    Serial.println(message);
-
-    if (topicName != TOPIC_CONTROL) {
-        return;
-    }
-
-    if (message.indexOf("\"mode\":\"auto\"") >= 0) {
-        autoMode = true;
-        Serial.println("CHE DO: TU DONG");
-    } else if (message.indexOf("\"mode\":\"manual\"") >= 0) {
-        bool ledValue;
-        bool buzzerValue;
-
-        // Chỉ nhận lệnh manual nếu có đủ cả hai trạng thái.
-        if (!jsonBoolValue(message, "led", ledValue) ||
-            !jsonBoolValue(message, "buzzer", buzzerValue)) {
-            Serial.println("CONTROL ERROR: THIEU LED/BUZZER");
-            return;
-        }
-
-        autoMode = false;
-        manualLed = ledValue;
-        manualBuzzer = buzzerValue;
-
-        Serial.println("CHE DO: THU CONG");
-    } else {
-        Serial.println("CONTROL ERROR: LENH KHONG HOP LE");
-        return;
-    }
-
-    applyOutputs();
-    publishStatus();
-}
-
-// =====================================================
-// 12. KẾT NỐI MQTT
-// =====================================================
-
-void connectMQTT() {
-    if (mqttClient.connected()) {
-        return;
-    }
-
+void reconnectMQTT() {
     if (WiFi.status() != WL_CONNECTED) {
         return;
     }
 
+    Serial.println();
     Serial.println("Dang ket noi MQTT...");
 
-    String clientId = "Smart4_ESP32_";
-    clientId += String((uint32_t)ESP.getEfuseMac(), HEX);
+    String clientID =
+        "ESP32C5_" +
+        String(
+            (uint32_t)ESP.getEfuseMac(),
+            HEX
+        );
 
-    if (mqttClient.connect(
-            clientId.c_str(),
-            MQTT_USERNAME,
-            MQTT_PASSWORD)) {
+    if (
+        client.connect(
+            clientID.c_str(),
+            mqtt_username,
+            mqtt_password
+        )
+    ) {
+        Serial.println("MQTT DA KET NOI!");
 
-        Serial.println("MQTT: KET NOI THANH CONG");
+        bool subscribed = client.subscribe(
+            topic_control,
+            1
+        );
 
-        if (mqttClient.subscribe(TOPIC_CONTROL)) {
-            Serial.print("MQTT SUBSCRIBE: ");
-            Serial.println(TOPIC_CONTROL);
+        if (subscribed) {
+            Serial.print("Da subscribe topic: ");
+            Serial.println(topic_control);
         } else {
-            Serial.println("MQTT SUBSCRIBE THAT BAI");
+            Serial.println(
+                "Subscribe topic that bai"
+            );
         }
 
-        publishStatus();
+        publishDeviceStatus();
     } else {
-        Serial.print("MQTT LOI, rc = ");
-        Serial.println(mqttClient.state());
+        Serial.print(
+            "MQTT ket noi that bai. rc = "
+        );
+
+        Serial.println(client.state());
     }
 }
 
 // =====================================================
-// 13. GỬI DỮ LIỆU CẢM BIẾN
+// DOC GAS %
 // =====================================================
 
-void publishSensorData() {
-    if (!mqttClient.connected()) {
-        return;
-    }
+float docGasPercent() {
+    int adc = analogRead(GAS_PIN);
 
-    float gas = readGasPercent();
-    float light = readLightValue();
+    float gasPercent;
 
-    float temperature = dht.readTemperature();
-    float humidity = dht.readHumidity();
-
-    char temperatureText[20];
-    char humidityText[20];
-
-    if (isnan(temperature)) {
-        strcpy(temperatureText, "null");
+    if (adc <= GAS_ADC_MIN) {
+        gasPercent = 0.0;
+    } else if (adc >= GAS_ADC_9000) {
+        gasPercent = 100.0;
     } else {
-        snprintf(temperatureText, sizeof(temperatureText), "%.2f",
-                 temperature);
+        gasPercent =
+            (
+                (float)(adc - GAS_ADC_MIN) /
+                (GAS_ADC_9000 - GAS_ADC_MIN)
+            ) * 100.0;
     }
 
-    if (isnan(humidity)) {
-        strcpy(humidityText, "null");
-    } else {
-        snprintf(humidityText, sizeof(humidityText), "%.2f",
-                 humidity);
-    }
-
-    char payload[240];
-
-    snprintf(
-        payload,
-        sizeof(payload),
-        "{\"gas\":%.2f,\"light\":%.2f,\"temperature\":%s,\"humidity\":%s}",
-        gas,
-        light,
-        temperatureText,
-        humidityText
+    return constrain(
+        gasPercent,
+        0.0,
+        100.0
     );
-
-    if (mqttClient.publish(TOPIC_SENSOR, payload)) {
-        Serial.print("SENSOR SENT: ");
-        Serial.println(payload);
-    } else {
-        Serial.println("SENSOR PUBLISH THAT BAI");
-    }
 }
 
 // =====================================================
-// 14. SETUP
+// DOC GAS PPM
+// =====================================================
+
+float docGasPPM() {
+    int adc = analogRead(GAS_PIN);
+
+    float ppm;
+
+    if (adc <= GAS_ADC_MIN) {
+        ppm = 0.1;
+    } else if (adc >= GAS_ADC_9000) {
+        ppm = 9000.0;
+    } else {
+        ppm =
+            0.1 +
+            (
+                (float)(adc - GAS_ADC_MIN) /
+                (GAS_ADC_9000 - GAS_ADC_MIN)
+            ) * (9000.0 - 0.1);
+    }
+
+    return constrain(
+        ppm,
+        0.1,
+        9000.0
+    );
+}
+
+// =====================================================
+// DOC ANH SANG - LUX
+// =====================================================
+
+float docAnhSang() {
+    int adc = analogRead(LDR_PIN);
+
+    float voltage =
+        ((float)adc / 4095.0) * 3.3;
+
+    if (voltage >= 3.29) {
+        return 0.1;
+    }
+
+    if (voltage <= 0.001) {
+        return 100000.0;
+    }
+
+    const float GAMMA = 0.7;
+    const float RL10 = 50.0;
+
+    float resistance =
+        2000.0 * voltage /
+        (3.3 - voltage);
+
+    float lux =
+        pow(
+            RL10 * 1000.0 *
+            pow(10.0, GAMMA) /
+            resistance,
+            1.0 / GAMMA
+        );
+
+    return constrain(
+        lux,
+        0.1,
+        100000.0
+    );
+}
+
+// =====================================================
+// SETUP
 // =====================================================
 
 void setup() {
     Serial.begin(115200);
+    delay(1500);
+
+    analogReadResolution(12);
+
+    pinMode(GAS_PIN, INPUT);
+    pinMode(LDR_PIN, INPUT);
 
     pinMode(LED_PIN, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
 
-    digitalWrite(LED_PIN, LOW);
-    digitalWrite(BUZZER_PIN, LOW);
+    currentMode = "auto";
 
-    analogReadResolution(12);
+    ledState = false;
+    buzzerState = false;
+    emergencyState = false;
 
-    dht.begin();
+    applyOutputs();
 
-    // TLS được mã hóa nhưng tạm bỏ qua xác thực chứng chỉ.
-    // Chỉ dùng để thử nghiệm; triển khai thực tế nên xác minh CA.
-    secureClient.setInsecure();
+    client.setCallback(mqttCallback);
+    client.setBufferSize(256);
 
-    mqttClient.setServer(MQTT_HOST, MQTT_PORT);
-    mqttClient.setCallback(mqttCallback);
-    mqttClient.setBufferSize(512);
-    mqttClient.setKeepAlive(30);
+    // TLS test: bo qua kiem tra chung chi.
+    // Nen thay bang chung chi CA khi trien khai that.
+    espClient.setInsecure();
 
-    connectWiFi();
+    client.setServer(
+        mqtt_server,
+        mqtt_port
+    );
+
+    client.setKeepAlive(30);
+    client.setSocketTimeout(10);
+
+    setup_wifi();
+
+    Serial.println();
+    Serial.println("================================");
+    Serial.println("ESP32-C5 SMART4 SAN SANG");
+    Serial.println("Mode mac dinh: AUTO");
+    Serial.println("Emergency mac dinh: OFF");
+    Serial.println("================================");
 }
 
 // =====================================================
-// 15. LOOP
+// LOOP
 // =====================================================
 
 void loop() {
+    // -------------------------------------------------
+    // 1. DUY TRI WIFI
+    // -------------------------------------------------
+
     if (WiFi.status() != WL_CONNECTED) {
-        if (millis() - lastWifiAttempt >= 5000) {
+        if (
+            millis() - lastWifiAttempt >=
+            WIFI_RETRY_INTERVAL
+        ) {
             lastWifiAttempt = millis();
-            connectWiFi();
+
+            Serial.println(
+                "WiFi mat ket noi - dang ket noi lai"
+            );
+
+            WiFi.disconnect();
+            WiFi.begin(ssid, password);
         }
 
         delay(10);
         return;
     }
 
-    if (!mqttClient.connected()) {
-        connectMQTT();
-        delay(10);
+    // -------------------------------------------------
+    // 2. DUY TRI MQTT
+    // -------------------------------------------------
+
+    if (!client.connected()) {
+        static unsigned long lastMqttAttempt = 0;
+
+        if (
+            millis() - lastMqttAttempt >= 3000
+        ) {
+            lastMqttAttempt = millis();
+            reconnectMQTT();
+        }
+    } else {
+        client.loop();
+    }
+
+    // -------------------------------------------------
+    // 3. DOC CAM BIEN VA GUI DU LIEU
+    // -------------------------------------------------
+
+    if (
+        millis() - lastPublish <
+        PUBLISH_INTERVAL
+    ) {
         return;
     }
 
-    mqttClient.loop();
+    lastPublish = millis();
 
-    unsigned long now = millis();
+    int gasADC = analogRead(GAS_PIN);
+    int ldrADC = analogRead(LDR_PIN);
 
-    if (now - lastSensorPublish >= SENSOR_INTERVAL) {
-        lastSensorPublish = now;
+    float gasPercent = docGasPercent();
+    float gasPPM = docGasPPM();
+    float light = docAnhSang();
 
-        applyOutputs();
-        publishSensorData();
+    // -------------------------------------------------
+    // 4. DIEU KHIEN TU DONG
+    // -------------------------------------------------
+
+    if (currentMode == "auto") {
+        ledState =
+            (light < NGUONG_ANH_SANG);
+
+        buzzerState =
+            (gasPercent > GAS_PERCENT_ALARM);
     }
 
-    if (now - lastStatusPublish >= STATUS_INTERVAL) {
-        lastStatusPublish = now;
-        publishStatus();
+    // Emergency duoc uu tien trong applyOutputs().
+    applyOutputs();
+
+    // -------------------------------------------------
+    // 5. TAO JSON CAM BIEN
+    // -------------------------------------------------
+
+    char sensorJson[128];
+
+    snprintf(
+        sensorJson,
+        sizeof(sensorJson),
+        "{\"gas\":%.1f,\"light\":%.1f}",
+        gasPercent,
+        light
+    );
+
+    // -------------------------------------------------
+    // 6. GUI CAM BIEN QUA MQTT
+    // -------------------------------------------------
+
+    bool sensorSent = false;
+
+    if (client.connected()) {
+        sensorSent = client.publish(
+            topic_sensor,
+            sensorJson
+        );
     }
 
-    delay(5);
+    // -------------------------------------------------
+    // 7. GUI TRANG THAI DINH KY
+    // -------------------------------------------------
+
+    if (
+        client.connected() &&
+        millis() - lastStatusPublish >=
+        STATUS_INTERVAL
+    ) {
+        publishDeviceStatus();
+    }
+
+    // -------------------------------------------------
+    // 8. SERIAL MONITOR
+    // -------------------------------------------------
+
+    Serial.println();
+    Serial.println("================================");
+
+    Serial.print("Gas ADC: ");
+    Serial.println(gasADC);
+
+    Serial.print("LDR ADC: ");
+    Serial.println(ldrADC);
+
+    Serial.print("Gas PPM: ");
+    Serial.print(gasPPM, 1);
+    Serial.println(" ppm");
+
+    Serial.print("Gas Web: ");
+    Serial.print(gasPercent, 1);
+    Serial.println(" %");
+
+    Serial.print("Light: ");
+    Serial.print(light, 1);
+    Serial.println(" lux");
+
+    Serial.print("Mode: ");
+    Serial.println(currentMode);
+
+    Serial.print("LED: ");
+    Serial.println(
+        emergencyState || ledState
+            ? "ON"
+            : "OFF"
+    );
+
+    Serial.print("BUZZER: ");
+    Serial.println(
+        emergencyState || buzzerState
+            ? "ON"
+            : "OFF"
+    );
+
+    Serial.print("Emergency: ");
+    Serial.println(
+        emergencyState ? "ON" : "OFF"
+    );
+
+    Serial.print("JSON sensor: ");
+    Serial.println(sensorJson);
+
+    Serial.println(
+        sensorSent
+            ? "MQTT: GUI CAM BIEN THANH CONG"
+            : "MQTT: CHUA GUI DUOC CAM BIEN"
+    );
+
+    Serial.println("================================");
 }
