@@ -1,690 +1,816 @@
+"use strict";
 
-// =====================================================
-// BIẾN TOÀN CỤC
-// =====================================================
+// ==================================================
+// SMART4 DASHBOARD - ESP32-C5 - GAS + LIGHT
+// ==================================================
 
-let lichSu = [];
+const API_SENSOR = "/api/sensor";
+const API_HISTORY = "/api/history";
+const API_STATUS = "/api/status";
+const API_CONTROL = "/api/control";
 
-let lightHistoryChart;
-let gasHistoryChart;
+const MAX_POINTS = 30;
+const SENSOR_INTERVAL = 3000;
+const STATUS_INTERVAL = 3000;
+const HISTORY_INTERVAL = 10000;
 
-let autoMode = false;
+let currentMode = "auto";
+let currentLed = false;
+let currentBuzzer = false;
+let controlBusy = false;
+let historyLoading = false;
 
-// Dữ liệu AUTO
-let autoGas = 30;
-let autoLight = 2500;
+const gauges = {};
+const charts = {};
 
-// Mật khẩu AUTO
-const AUTO_PASSWORD = "1234";
-
-// =====================================================
-// NGƯỠNG HỆ THỐNG
-// =====================================================
-
-// Gas > 35% -> cảnh báo
-const GAS_ALARM = 35;
-
-// Ánh sáng < 300 lux -> trời tối, bật đèn
-const LIGHT_THRESHOLD = 300;
-
-
-// =====================================================
-// BẬT / TẮT AUTO
-// =====================================================
-
-function toggleAutoMode() {
-
-    // -----------------------------------------
-    // Nếu AUTO đang bật -> tắt AUTO
-    // -----------------------------------------
-
-    if (autoMode) {
-
-        autoMode = false;
-
-        const btn =
-            document.getElementById("autoModeBtn");
-
-        const mode =
-            document.getElementById("modeStatus");
-
-        const connection =
-            document.getElementById("connectionStatus");
-
-        btn.innerText = "AUTO: OFF";
-
-        btn.classList.remove("auto-on");
-
-        btn.classList.add("auto-off");
-
-        mode.innerText =
-            "MANUAL - Điều khiển từ Wokwi";
-
-        connection.innerText =
-            "● Server đang hoạt động";
-
-        return;
-    }
-
-
-    // -----------------------------------------
-    // Nhập mật khẩu để bật AUTO
-    // -----------------------------------------
-
-    const password =
-        prompt("🔐 Nhập mật khẩu để bật chế độ AUTO:");
-
-    if (password === null) {
-        return;
-    }
-
-
-    // -----------------------------------------
-    // Kiểm tra mật khẩu
-    // -----------------------------------------
-
-    if (password !== AUTO_PASSWORD) {
-
-        alert(
-            "❌ Sai mật khẩu! Không thể bật AUTO."
-        );
-
-        return;
-    }
-
-
-    // -----------------------------------------
-    // Bật AUTO
-    // -----------------------------------------
-
-    autoMode = true;
-
-    const btn =
-        document.getElementById("autoModeBtn");
-
-    const mode =
-        document.getElementById("modeStatus");
-
-    const connection =
-        document.getElementById("connectionStatus");
-
-    btn.innerText = "AUTO: ON";
-
-    btn.classList.remove("auto-off");
-
-    btn.classList.add("auto-on");
-
-    mode.innerText =
-        "AUTO - Web tự động thay đổi dữ liệu";
-
-    connection.innerText =
-        "● AUTO - Dữ liệu mô phỏng trên Web";
+function $(id) {
+    return document.getElementById(id);
 }
 
-
-// =====================================================
-// TẠO DỮ LIỆU AUTO
-// =====================================================
-
-function taoDuLieuAuto() {
-
-    // Gas thay đổi ngẫu nhiên
-    autoGas +=
-        (Math.random() - 0.5) * 20;
-
-    // Ánh sáng thay đổi ngẫu nhiên
-    autoLight +=
-        (Math.random() - 0.5) * 1000;
-
-
-    // Giới hạn Gas
-    autoGas =
-        Math.max(
-            0,
-            Math.min(
-                100,
-                autoGas
-            )
-        );
-
-
-    // Giới hạn ánh sáng
-    autoLight =
-        Math.max(
-            0,
-            Math.min(
-                5000,
-                autoLight
-            )
-        );
-
-
-    return {
-        gas: autoGas,
-        light: autoLight
-    };
+function setText(id, value) {
+    const element = $(id);
+    if (element) element.textContent = value;
 }
 
+function setClass(id, className) {
+    const element = $(id);
+    if (element) element.className = className;
+}
 
-// =====================================================
-// CẬP NHẬT DỮ LIỆU
-// =====================================================
-
-async function capNhatDuLieu() {
-
-    let gas;
-    let light;
-
-
-    // =================================================
-    // AUTO
-    // =================================================
-
-    if (autoMode) {
-
-        const data =
-            taoDuLieuAuto();
-
-        gas =
-            data.gas;
-
-        light =
-            data.light;
+function finiteNumber(value) {
+    if (value === null || value === undefined || value === "") {
+        return null;
     }
 
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
 
-    // =================================================
-    // MANUAL - LẤY DỮ LIỆU TỪ SERVER
-    // =================================================
+function formatTime(value) {
+    if (!value) return "--";
 
-    else {
+    const date = new Date(value);
 
-        try {
+    if (Number.isNaN(date.getTime())) {
+        return "--";
+    }
 
-            const response =
-                await fetch("/api/sensor");
+    return date.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+    });
+}
 
-
-            if (!response.ok) {
-
-                throw new Error(
-                    "API lỗi"
-                );
-            }
-
-
-            const data =
-                await response.json();
-
-
-            gas =
-                Number(data.gas);
-
-            light =
-                Number(data.light);
-
-
-            document
-                .getElementById(
-                    "connectionStatus"
-                )
-                .innerText =
-                "● Server đang hoạt động";
+async function getJSON(url, options = {}) {
+    const response = await fetch(url, {
+        cache: "no-store",
+        ...options,
+        headers: {
+            "Content-Type": "application/json",
+            ...(options.headers || {})
         }
-
-
-        catch (error) {
-
-            console.error(error);
-
-            document
-                .getElementById(
-                    "connectionStatus"
-                )
-                .innerText =
-                "● Không kết nối được Server";
-
-            return;
-        }
-    }
-
-
-    // =================================================
-    // HIỂN THỊ GIÁ TRỊ
-    // =================================================
-
-    document
-        .getElementById("lightValue")
-        .innerText =
-        light.toFixed(1) + " lux";
-
-
-    document
-        .getElementById("gasValue")
-        .innerText =
-        gas.toFixed(1) + " %";
-
-
-    // =================================================
-    // TRẠNG THÁI ÁNH SÁNG
-    // =================================================
-
-    const lightStatus =
-        document.getElementById(
-            "lightStatus"
-        );
-
-
-    // -----------------------------------------
-    // LUX < 300
-    // -----------------------------------------
-
-    if (light < LIGHT_THRESHOLD) {
-
-        lightStatus.innerText =
-            "🌙 Trời tối - Đèn đang bật";
-
-        lightStatus.style.color =
-            "#facc15";
-    }
-
-
-    // -----------------------------------------
-    // LUX >= 300
-    // -----------------------------------------
-
-    else {
-
-        lightStatus.innerText =
-            "☀️ Ánh sáng bình thường - Đèn tắt";
-
-        lightStatus.style.color =
-            "#22c55e";
-    }
-
-
-    // =================================================
-    // TRẠNG THÁI GAS
-    // =================================================
-
-    const gasStatus =
-        document.getElementById(
-            "gasStatus"
-        );
-
-
-    if (gas > GAS_ALARM) {
-
-        // Gas > 35%
-
-        gasStatus.innerText =
-            "🔴 CẢNH BÁO GAS CAO";
-
-        gasStatus.style.color =
-            "#ef4444";
-    }
-
-    else {
-
-        // Gas <= 35%
-
-        gasStatus.innerText =
-            "🟢 An toàn";
-
-        gasStatus.style.color =
-            "#22c55e";
-    }
-
-
-    // =================================================
-    // LƯU LỊCH SỬ
-    // =================================================
-
-    lichSu.push({
-
-        time:
-            new Date()
-                .toLocaleTimeString(
-                    "vi-VN"
-                ),
-
-        light:
-            light,
-
-        gas:
-            gas
     });
 
-
-    // Chỉ giữ 30 dữ liệu gần nhất
-    if (lichSu.length > 30) {
-
-        lichSu.shift();
-    }
-
-
-    // =================================================
-    // VẼ GAUGE
-    // =================================================
-
-    veGauge(
-        "lightChart",
-        light,
-        5000,
-        "lux"
-    );
-
-
-    veGauge(
-        "gasChart",
-        gas,
-        100,
-        "%"
-    );
-
-
-    // =================================================
-    // VẼ BIỂU ĐỒ
-    // =================================================
-
-    veLichSu();
-}
-
-
-// =====================================================
-// VẼ GAUGE
-// =====================================================
-
-function veGauge(
-    id,
-    value,
-    max,
-    donVi
-) {
-
-    const element =
-        document.getElementById(id);
-
-
-    if (!element) {
-        return;
-    }
-
-
-    // Tính phần trăm vòng tròn
-    let percent =
-        (value / max) * 100;
-
-
-    percent =
-        Math.max(
-            0,
-            Math.min(
-                100,
-                percent
-            )
-        );
-
-
-    element.innerHTML = `
-
-        <div style="
-            width:220px;
-            height:220px;
-            border-radius:50%;
-            margin:auto;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-
-            background:conic-gradient(
-                #22c55e ${percent}%,
-                #374151 ${percent}%
-            );
-        ">
-
-            <div style="
-                width:170px;
-                height:170px;
-                border-radius:50%;
-                background:#1f2937;
-
-                display:flex;
-                flex-direction:column;
-
-                align-items:center;
-                justify-content:center;
-            ">
-
-                <div style="
-                    font-size:32px;
-                    font-weight:bold;
-                    color:white;
-                ">
-
-                    ${Number(value).toFixed(1)}
-
-                </div>
-
-
-                <div style="
-                    font-size:18px;
-                    color:#d1d5db;
-                ">
-
-                    ${donVi}
-
-                </div>
-
-            </div>
-
-        </div>
-    `;
-}
-
-
-// =====================================================
-// VẼ LỊCH SỬ
-// =====================================================
-
-function veLichSu() {
-
-    const lightElement =
-        document.getElementById(
-            "lightHistoryChart"
-        );
-
-
-    const gasElement =
-        document.getElementById(
-            "gasHistoryChart"
-        );
-
-
-    if (!lightElement || !gasElement) {
-        return;
-    }
-
-
-    // =================================================
-    // BIỂU ĐỒ ÁNH SÁNG
-    // =================================================
-
-    if (!lightHistoryChart) {
-
-        lightHistoryChart =
-            echarts.init(
-                lightElement
-            );
-    }
-
-
-    lightHistoryChart.setOption({
-
-        tooltip: {
-            trigger: "axis"
-        },
-
-
-        xAxis: {
-
-            type: "category",
-
-            data:
-                lichSu.map(
-                    item => item.time
-                )
-        },
-
-
-        yAxis: {
-
-            type: "value",
-
-            name: "Lux"
-        },
-
-
-        series: [{
-
-            name: "Ánh sáng",
-
-            type: "line",
-
-            smooth: true,
-
-            data:
-                lichSu.map(
-                    item => item.light
-                )
-        }]
-    });
-
-
-    // =================================================
-    // BIỂU ĐỒ GAS
-    // =================================================
-
-    if (!gasHistoryChart) {
-
-        gasHistoryChart =
-            echarts.init(
-                gasElement
-            );
-    }
-
-
-    gasHistoryChart.setOption({
-
-        tooltip: {
-            trigger: "axis"
-        },
-
-
-        xAxis: {
-
-            type: "category",
-
-            data:
-                lichSu.map(
-                    item => item.time
-                )
-        },
-
-
-        yAxis: {
-
-            type: "value",
-
-            name: "%"
-        },
-
-
-        series: [{
-
-            name: "Gas",
-
-            type: "line",
-
-            smooth: true,
-
-            data:
-                lichSu.map(
-                    item => item.gas
-                )
-        }]
-    });
-}
-
-
-// =====================================================
-// TẢI LỊCH SỬ TỪ MYSQL
-// =====================================================
-
-async function taiLichSu() {
+    const body = await response.text();
+    let result;
 
     try {
-
-        const response =
-            await fetch(
-                "/api/history"
-            );
-
-
-        const data =
-            await response.json();
-
-
-        lichSu =
-            data.map(
-                item => ({
-
-                    time:
-                        new Date(
-                            item.created_at
-                        ).toLocaleTimeString(
-                            "vi-VN"
-                        ),
-
-                    light:
-                        Number(
-                            item.light
-                        ),
-
-                    gas:
-                        Number(
-                            item.gas
-                        )
-                })
-            );
-
-
-        veLichSu();
+        result = body ? JSON.parse(body) : {};
+    } catch {
+        throw new Error(
+            `${url} không trả về JSON hợp lệ (HTTP ${response.status}).`
+        );
     }
 
-
-    catch (error) {
-
-        console.error(
-            "Lỗi lịch sử:",
-            error
+    if (!response.ok) {
+        throw new Error(
+            result.message || `Yêu cầu thất bại: HTTP ${response.status}`
         );
+    }
+
+    return result;
+}
+
+function normalizeRows(result) {
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result?.data)) return result.data;
+    if (Array.isArray(result?.history)) return result.history;
+    if (Array.isArray(result?.rows)) return result.rows;
+
+    return [];
+}
+
+// ==================================================
+// ĐỒNG HỒ CẢM BIẾN
+// ==================================================
+
+function createGauge(elementId, title, unit, min, max) {
+    const element = $(elementId);
+
+    if (!element || typeof echarts === "undefined") {
+        return null;
+    }
+
+    const chart =
+        echarts.getInstanceByDom(element) || echarts.init(element);
+
+    chart.setOption({
+        animationDuration: 350,
+
+        series: [{
+            type: "gauge",
+            min,
+            max,
+            startAngle: 210,
+            endAngle: -30,
+            center: ["50%", "55%"],
+            radius: "90%",
+
+            progress: {
+                show: true,
+                width: 13
+            },
+
+            axisLine: {
+                lineStyle: {
+                    width: 13,
+                    color: [[1, "#293548"]]
+                }
+            },
+
+            pointer: {
+                show: true,
+                length: "58%",
+                width: 4
+            },
+
+            axisTick: {
+                distance: -18,
+                length: 4,
+                lineStyle: {
+                    color: "#94a3b8"
+                }
+            },
+
+            splitLine: {
+                distance: -19,
+                length: 9,
+                lineStyle: {
+                    color: "#cbd5e1",
+                    width: 2
+                }
+            },
+
+            axisLabel: {
+                distance: 15,
+                color: "#94a3b8",
+                fontSize: 10
+            },
+
+            anchor: {
+                show: true,
+                showAbove: true,
+                size: 8
+            },
+
+            title: {
+                show: true,
+                offsetCenter: [0, "63%"],
+                color: "#94a3b8",
+                fontSize: 12
+            },
+
+            detail: {
+                show: true,
+                valueAnimation: true,
+                offsetCenter: [0, "28%"],
+                fontSize: 22,
+                fontWeight: "bold",
+                color: "#f8fafc",
+
+                formatter(value) {
+                    return `${Number(value).toFixed(1)} ${unit}`;
+                }
+            },
+
+            data: [{
+                value: min,
+                name: title
+            }]
+        }]
+    });
+
+    return chart;
+}
+
+function updateGauge(chart, value, title, min, max) {
+    if (!chart || value === null) return;
+
+    const displayedValue = Math.max(min, Math.min(max, value));
+
+    chart.setOption({
+        series: [{
+            data: [{
+                value: displayedValue,
+                name: title
+            }]
+        }]
+    });
+}
+
+function initGauges() {
+    gauges.gas = createGauge(
+        "gasGauge", "Khí gas", "%", 0, 100
+    );
+
+    gauges.light = createGauge(
+        "lightGauge", "Ánh sáng", "lux", 0, 20000
+    );
+}
+
+// ==================================================
+// BIỂU ĐỒ LỊCH SỬ
+// Biểu đồ chỉ dùng dữ liệu từ API /api/history.
+// ==================================================
+
+function createLineChart(elementId, title, unit) {
+    const element = $(elementId);
+
+    if (!element || typeof echarts === "undefined") {
+        return null;
+    }
+
+    const chart =
+        echarts.getInstanceByDom(element) || echarts.init(element);
+
+    chart.setOption({
+        backgroundColor: "transparent",
+        animationDuration: 300,
+
+        tooltip: {
+            trigger: "axis",
+
+            formatter(params) {
+                if (!params?.length) return "";
+
+                const item = params[0];
+                const value = finiteNumber(item.value);
+
+                return `${item.axisValue}<br>${title}: ${
+                    value === null
+                        ? "Không có dữ liệu"
+                        : `${value.toFixed(1)} ${unit}`
+                }`;
+            }
+        },
+
+        grid: {
+            left: 58,
+            right: 20,
+            top: 25,
+            bottom: 45
+        },
+
+        xAxis: {
+            type: "category",
+            data: [],
+            boundaryGap: false,
+
+            axisLabel: {
+                color: "#94a3b8",
+                hideOverlap: true
+            },
+
+            axisLine: {
+                lineStyle: {
+                    color: "#374151"
+                }
+            },
+
+            axisTick: {
+                show: false
+            }
+        },
+
+        yAxis: {
+            type: "value",
+            scale: true,
+
+            axisLabel: {
+                color: "#94a3b8"
+            },
+
+            axisTick: {
+                show: false
+            },
+
+            splitLine: {
+                lineStyle: {
+                    color: "#293548"
+                }
+            }
+        },
+
+        series: [{
+            name: title,
+            type: "line",
+            data: [],
+            smooth: true,
+            connectNulls: false,
+            showSymbol: true,
+            symbol: "circle",
+            symbolSize: 5,
+
+            lineStyle: {
+                width: 3
+            },
+
+            areaStyle: {
+                opacity: 0.1
+            }
+        }],
+
+        graphic: [{
+            type: "text",
+            left: "center",
+            top: "middle",
+            silent: true,
+
+            style: {
+                text: "Đang tải lịch sử...",
+                fill: "#94a3b8",
+                fontSize: 13
+            }
+        }]
+    });
+
+    return chart;
+}
+
+function initCharts() {
+    charts.gas = createLineChart(
+        "gasChart", "Khí gas", "%"
+    );
+
+    charts.light = createLineChart(
+        "lightChart", "Ánh sáng", "lux"
+    );
+}
+
+function historyLabel(row, index) {
+    if (row?.created_at) {
+        const time = formatTime(row.created_at);
+        if (time !== "--") return time;
+    }
+
+    if (row?.id !== undefined && row?.id !== null) {
+        return `ID ${row.id}`;
+    }
+
+    return `Mẫu ${index + 1}`;
+}
+
+function updateHistoryChart(chart, rows, field, title) {
+    if (!chart) return;
+
+    const validRows = rows
+        .map((row, index) => ({
+            row,
+            index,
+            value: finiteNumber(row?.[field])
+        }))
+        .filter(item => item.value !== null);
+
+    const labels = validRows.map(item =>
+        historyLabel(item.row, item.index)
+    );
+
+    const values = validRows.map(item => item.value);
+
+    chart.setOption({
+        xAxis: {
+            data: labels
+        },
+
+        series: [{
+            name: title,
+            data: values
+        }],
+
+        graphic: [{
+            type: "text",
+            left: "center",
+            top: "middle",
+            silent: true,
+
+            style: {
+                text: values.length ? "" : "Chưa có dữ liệu lịch sử",
+                fill: "#94a3b8",
+                fontSize: 13
+            }
+        }]
+    });
+
+    chart.resize();
+}
+
+async function loadHistory() {
+    if (historyLoading) return;
+
+    historyLoading = true;
+
+    try {
+        const result = await getJSON(API_HISTORY);
+        const rows = normalizeRows(result);
+
+        const sortedRows = [...rows].sort((a, b) => {
+            const timeA = a?.created_at
+                ? new Date(a.created_at).getTime()
+                : NaN;
+
+            const timeB = b?.created_at
+                ? new Date(b.created_at).getTime()
+                : NaN;
+
+            if (Number.isFinite(timeA) && Number.isFinite(timeB)) {
+                return timeA - timeB;
+            }
+
+            const idA = finiteNumber(a?.id);
+            const idB = finiteNumber(b?.id);
+
+            if (idA !== null && idB !== null) {
+                return idA - idB;
+            }
+
+            if (Number.isFinite(timeA)) return -1;
+            if (Number.isFinite(timeB)) return 1;
+
+            return 0;
+        });
+
+        const recentRows = sortedRows.slice(-MAX_POINTS);
+
+        updateHistoryChart(
+            charts.gas, recentRows, "gas", "Khí gas"
+        );
+
+        updateHistoryChart(
+            charts.light, recentRows, "light", "Ánh sáng"
+        );
+
+        console.log(`[HISTORY] Đã tải ${recentRows.length} bản ghi.`);
+    } catch (error) {
+        console.error("[HISTORY] Lỗi tải lịch sử:", error);
+    } finally {
+        historyLoading = false;
     }
 }
 
+// ==================================================
+// DỮ LIỆU CẢM BIẾN MỚI NHẤT
+// ==================================================
 
-// =====================================================
-// KHỞI ĐỘNG WEB
-// =====================================================
+async function loadSensor() {
+    try {
+        const result = await getJSON(API_SENSOR);
 
-taiLichSu();
+        const sensor =
+            result.data && typeof result.data === "object"
+                ? result.data
+                : result;
 
-capNhatDuLieu();
+        const gas = finiteNumber(sensor.gas);
+        const light = finiteNumber(sensor.light);
 
+        updateGauge(gauges.gas, gas, "Khí gas", 0, 100);
+        updateGauge(gauges.light, light, "Ánh sáng", 0, 20000);
 
-// Cập nhật mỗi 1 giây
-setInterval(
-    capNhatDuLieu,
-    1000
-);
+        setText(
+            "gasNote",
+            gas === null
+                ? "Chưa có dữ liệu gas"
+                : gas > 35
+                    ? `⚠️ Gas ${gas.toFixed(1)}% — vượt ngưỡng 35%`
+                    : `Gas ${gas.toFixed(1)}% — dưới ngưỡng 35%`
+        );
 
+        setText(
+            "lightNote",
+            light === null
+                ? "Chưa có dữ liệu ánh sáng"
+                : light < 300
+                    ? `🌙 ${light.toFixed(1)} lux — thiếu sáng`
+                    : `☀️ ${light.toFixed(1)} lux — đủ sáng`
+        );
+
+        setText(
+            "lastUpdate",
+            formatTime(
+                sensor.receivedAt ||
+                sensor.created_at ||
+                sensor.updatedAt
+            )
+        );
+
+        setText("backendState", "Hoạt động");
+        setClass("backendState", "state-on");
+
+        console.log("[SENSOR]", sensor);
+    } catch (error) {
+        console.error("[SENSOR] Không tải được dữ liệu:", error);
+
+        setText("backendState", "Lỗi API");
+        setClass("backendState", "state-off");
+    }
+}
+
+// ==================================================
+// TRẠNG THÁI THIẾT BỊ
+// ==================================================
+
+function updateDeviceStatus(result) {
+    const device = result.device || {};
+
+    currentMode = device.mode === "manual" ? "manual" : "auto";
+    currentLed = device.led === true;
+    currentBuzzer = device.buzzer === true;
+
+    const mqttConnected = result.mqttConnected === true;
+    const hasDeviceStatus = Boolean(device.updatedAt);
+
+    setText(
+        "mqttState",
+        mqttConnected ? "Đã kết nối" : "Mất kết nối"
+    );
+
+    setClass(
+        "mqttState",
+        mqttConnected ? "state-on" : "state-off"
+    );
+
+    setText(
+        "connectionBadge",
+        mqttConnected
+            ? "● MQTT đã kết nối"
+            : "● MQTT mất kết nối"
+    );
+
+    setText(
+        "deviceState",
+        hasDeviceStatus ? "Đã nhận trạng thái" : "Chưa nhận trạng thái"
+    );
+
+    setClass(
+        "deviceState",
+        hasDeviceStatus ? "state-on" : "state-unknown"
+    );
+
+    setText(
+        "modeState",
+        currentMode === "auto" ? "Tự động" : "Thủ công"
+    );
+
+    setClass(
+        "modeState",
+        currentMode === "auto" ? "state-on" : "state-unknown"
+    );
+
+    setText("ledState", currentLed ? "Đang bật" : "Đang tắt");
+    setClass("ledState", currentLed ? "state-on" : "state-off");
+
+    setText(
+        "buzzerState",
+        currentBuzzer ? "Đang bật" : "Đang tắt"
+    );
+
+    setClass(
+        "buzzerState",
+        currentBuzzer ? "state-on" : "state-off"
+    );
+
+    const autoButton = $("autoModeButton");
+    const manualButton = $("manualModeButton");
+    const ledSwitch = $("ledSwitch");
+    const buzzerSwitch = $("buzzerSwitch");
+
+    if (autoButton) {
+        autoButton.classList.toggle("active", currentMode === "auto");
+        autoButton.disabled = controlBusy || !mqttConnected;
+    }
+
+    if (manualButton) {
+        manualButton.classList.toggle("active", currentMode === "manual");
+        manualButton.disabled = controlBusy || !mqttConnected;
+    }
+
+    if (ledSwitch) {
+        ledSwitch.checked = currentLed;
+        ledSwitch.disabled =
+            controlBusy || !mqttConnected || currentMode !== "manual";
+    }
+
+    if (buzzerSwitch) {
+        buzzerSwitch.checked = currentBuzzer;
+        buzzerSwitch.disabled =
+            controlBusy || !mqttConnected || currentMode !== "manual";
+    }
+
+    setText(
+        "ledDescription",
+        currentMode === "auto"
+            ? "Đèn tự động theo ngưỡng ánh sáng"
+            : "Bạn có thể bật/tắt đèn bằng công tắc"
+    );
+
+    setText(
+        "buzzerDescription",
+        currentMode === "auto"
+            ? "Còi tự động khi gas vượt 35%"
+            : "Bạn có thể bật/tắt còi bằng công tắc"
+    );
+
+    setText(
+        "controlMessage",
+        currentMode === "auto"
+            ? "Chế độ tự động: đèn bật khi ánh sáng dưới 300 lux; còi bật khi gas vượt 35%."
+            : "Chế độ thủ công: bạn điều khiển đèn và còi bằng công tắc."
+    );
+}
+
+async function loadStatus() {
+    try {
+        const result = await getJSON(API_STATUS);
+        updateDeviceStatus(result);
+    } catch (error) {
+        console.error("[STATUS] Không tải được trạng thái:", error);
+
+        setText("connectionBadge", "Không kết nối được backend");
+        setText("backendState", "Lỗi kết nối");
+        setClass("backendState", "state-off");
+
+        setText("mqttState", "Không rõ");
+        setClass("mqttState", "state-unknown");
+
+        setText("deviceState", "Không rõ");
+        setClass("deviceState", "state-unknown");
+
+        for (const id of [
+            "autoModeButton",
+            "manualModeButton",
+            "ledSwitch",
+            "buzzerSwitch"
+        ]) {
+            const element = $(id);
+            if (element) element.disabled = true;
+        }
+    }
+}
+
+// ==================================================
+// ĐIỀU KHIỂN THIẾT BỊ
+// ==================================================
+
+async function sendControl(command) {
+    if (controlBusy) return;
+
+    controlBusy = true;
+    setText("controlMessage", "Đang gửi lệnh đến ESP32...");
+
+    for (const id of [
+        "autoModeButton",
+        "manualModeButton",
+        "ledSwitch",
+        "buzzerSwitch"
+    ]) {
+        const element = $(id);
+        if (element) element.disabled = true;
+    }
+
+    try {
+        const result = await getJSON(API_CONTROL, {
+            method: "POST",
+            body: JSON.stringify(command)
+        });
+
+        setText(
+            "controlMessage",
+            result.message || "Backend đã nhận lệnh điều khiển."
+        );
+
+        console.log("[CONTROL] Lệnh:", command);
+        console.log("[CONTROL] Phản hồi:", result);
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (error) {
+        console.error("[CONTROL] Gửi lệnh thất bại:", error);
+
+        setText(
+            "controlMessage",
+            `Không gửi được lệnh: ${error.message}`
+        );
+    } finally {
+        controlBusy = false;
+        await loadStatus();
+    }
+}
+
+function setAutoMode() {
+    sendControl({ mode: "auto" });
+}
+
+function setManualMode() {
+    sendControl({
+        mode: "manual",
+        led: currentLed,
+        buzzer: currentBuzzer
+    });
+}
+
+function toggleLed() {
+    const ledSwitch = $("ledSwitch");
+
+    if (!ledSwitch || currentMode !== "manual" || controlBusy) {
+        return;
+    }
+
+    sendControl({
+        mode: "manual",
+        led: ledSwitch.checked,
+        buzzer: currentBuzzer
+    });
+}
+
+function toggleBuzzer() {
+    const buzzerSwitch = $("buzzerSwitch");
+
+    if (!buzzerSwitch || currentMode !== "manual" || controlBusy) {
+        return;
+    }
+
+    sendControl({
+        mode: "manual",
+        led: currentLed,
+        buzzer: buzzerSwitch.checked
+    });
+}
+
+window.setAutoMode = setAutoMode;
+window.setManualMode = setManualMode;
+window.toggleLed = toggleLed;
+window.toggleBuzzer = toggleBuzzer;
+
+// ==================================================
+// KHỞI ĐỘNG
+// ==================================================
+
+document.addEventListener("DOMContentLoaded", async function () {
+    if (typeof echarts === "undefined") {
+        setText("connectionBadge", "Không tải được thư viện biểu đồ");
+        setText("backendState", "Chưa khởi tạo");
+        console.error("ECharts chưa tải được.");
+        return;
+    }
+
+    initGauges();
+    initCharts();
+
+    await Promise.allSettled([
+        loadSensor(),
+        loadStatus(),
+        loadHistory()
+    ]);
+
+    setInterval(loadSensor, SENSOR_INTERVAL);
+    setInterval(loadStatus, STATUS_INTERVAL);
+    setInterval(loadHistory, HISTORY_INTERVAL);
+
+    console.log("Smart4 Dashboard đã khởi động.");
+});
+
+// ==================================================
+// TỐI ƯU KHI QUAY LẠI TAB HOẶC ĐỔI KÍCH THƯỚC
+// ==================================================
+
+function resizeAllCharts() {
+    Object.values(gauges).forEach(chart => {
+        if (chart) chart.resize();
+    });
+
+    Object.values(charts).forEach(chart => {
+        if (chart) chart.resize();
+    });
+}
+
+document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+
+    resizeAllCharts();
+
+    loadSensor();
+    loadStatus();
+    loadHistory();
+});
+
+window.addEventListener("resize", resizeAllCharts);
