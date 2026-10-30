@@ -1,3 +1,4 @@
+//Node.js
 "use strict";
 
 require("dotenv").config();
@@ -10,9 +11,9 @@ const path = require("path");
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// ==================================================
+
 // 1. CAU HINH EMQX MQTT
-// ==================================================
+
 
 const MQTT_HOST = process.env.EMQX_HOST;
 const MQTT_PORT = Number(process.env.EMQX_PORT) || 8883;
@@ -23,9 +24,9 @@ const TOPIC_SENSOR = "nhansida/iot/sensor";
 const TOPIC_CONTROL = "nhansida/iot/control";
 const TOPIC_STATUS = "nhansida/iot/status";
 
-// ==================================================
+
 // 2. CAU HINH SUPABASE
-// ==================================================
+
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -78,9 +79,9 @@ const supabase = createClient(
     }
 );
 
-// ==================================================
-// 3. CAU HINH EXPRESS
-// ==================================================
+
+// 3. CAU HINH EXPRESS backend 
+
 
 app.use(express.json({ limit: "20kb" }));
 
@@ -92,9 +93,9 @@ app.get("/", (req, res) => {
     );
 });
 
-// ==================================================
+
 // 4. BIEN LUU TRANG THAI
-// ==================================================
+
 
 let latestSensor = null;
 
@@ -114,9 +115,9 @@ let sensorMessagesReceived = 0;
 let sensorRowsSaved = 0;
 let sensorRowsSkipped = 0;
 
-// ==================================================
+
 // 5. UOC TINH ALCOHOL VA SMOKE
-// ==================================================
+
 
 // Luu y:
 // Day chi la gia tri uoc tinh tu cam bien gas,
@@ -155,7 +156,7 @@ function normalizeSensorRow(row) {
 }
 
 // ==================================================
-// 6. KET NOI MQTT EMQX
+// 6. KET NOI MQTT EMQX HiveMQ Cloud
 // ==================================================
 
 const mqttUrl = `mqtts://${MQTT_HOST}:${MQTT_PORT}`;
@@ -643,8 +644,7 @@ app.use((error, req, res, next) => {
     });
 });
 
-// ==================================================
-// 18. KHOI DONG SERVER
+// 18. KHOI DONG SERVER khởi chạy máy chủ Node.js
 // ==================================================
 
 const server = app.listen(PORT, "0.0.0.0", () => {
